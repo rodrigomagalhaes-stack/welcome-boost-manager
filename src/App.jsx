@@ -284,6 +284,21 @@ const S = {
     fontWeight: 600, cursor: "pointer", letterSpacing: -0.2,
     fontFamily: "'DM Sans', sans-serif",
   },
+  reportBox: {
+    marginTop: 14, padding: "12px 14px", borderRadius: 10,
+    background: "rgba(0,229,160,0.04)", border: "1px solid rgba(0,229,160,0.15)",
+  },
+  reportBoxTitle: {
+    fontSize: 10, color: "#00E5A0", textTransform: "uppercase",
+    letterSpacing: 0.8, fontWeight: 700, marginBottom: 10,
+    display: "flex", alignItems: "center", gap: 6,
+  },
+  reportBoxGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 },
+  reportBoxItem: { display: "flex", flexDirection: "column", gap: 2 },
+  reportBoxLabel: { fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: 0.6 },
+  reportBoxValue: { fontSize: 13, fontWeight: 700, color: "#ccc" },
+  barRow: { marginBottom: 14 },
+  barTrack: { height: 8, borderRadius: 6, background: "rgba(255,255,255,0.05)", overflow: "hidden" },
   btnSaveReport: {
     display: "flex", alignItems: "center", gap: 8,
     background: "linear-gradient(135deg, #FF3A00, #FF6A00)",
@@ -299,7 +314,7 @@ const S = {
 function FormModal({ onClose, onSave, loading }) {
   const [form, setForm] = useState({
     confronto: "", id_jogo: "", feito_por: "Neto", pedido_por: "",
-    data_evento: "", odd_antiga: "", odd_nova: "", max_stake: "",
+    data_evento: "", odd_antiga: "", odd_nova: "", max_stake: "", mercado: "",
   });
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -338,6 +353,10 @@ function FormModal({ onClose, onSave, loading }) {
             <div style={S.formGroup}>
               <span style={S.label}>ID do Jogo</span>
               <input style={inputStyle} placeholder="Ex: 5024247122" value={form.id_jogo} onChange={set("id_jogo")} />
+            </div>
+            <div style={S.formGroup}>
+              <span style={S.label}>Mercado</span>
+              <input style={inputStyle} placeholder="Ex: Resultado Final, Over/Under..." value={form.mercado} onChange={set("mercado")} />
             </div>
             <div style={S.formGroup}>
               <span style={S.label}>Feito por</span>
@@ -640,8 +659,152 @@ function HistoryPage({ onBack }) {
   );
 }
 
+// ─── RELATÓRIOS GERAIS (DASHBOARD) ───────────────────────────────────────────
+function DashboardPage({ onBack }) {
+  const [reports, setReports] = useState(null);
+  const [periodFrom, setPeriodFrom] = useState("");
+  const [periodTo, setPeriodTo] = useState("");
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api(
+          "GET",
+          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento,mercado)&order=created_at.desc"
+        );
+        if (!cancelled) setReports(data || []);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setReports([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  const filtered = (reports || []).filter((r) => {
+    const ev = r.welcome_boosts?.data_evento ? new Date(r.welcome_boosts.data_evento) : null;
+    if (periodFrom && (!ev || ev < new Date(periodFrom))) return false;
+    if (periodTo && (!ev || ev > new Date(periodTo + "T23:59:59"))) return false;
+    return true;
+  });
+
+  const totals = filtered.reduce(
+    (acc, r) => {
+      acc.totalStake += Number(r.total_stake) || 0;
+      acc.ggr += Number(r.ggr) || 0;
+      acc.idsUnicos += Number(r.ids_unicos) || 0;
+      acc.qtdApostas += Number(r.qtd_apostas) || 0;
+      acc.wins += Number(r.wins) || 0;
+      acc.lost += Number(r.lost) || 0;
+      acc.cashout += Number(r.cashout) || 0;
+      return acc;
+    },
+    { totalStake: 0, ggr: 0, idsUnicos: 0, qtdApostas: 0, wins: 0, lost: 0, cashout: 0 }
+  );
+  const ticketMedio = totals.qtdApostas > 0 ? totals.totalStake / totals.qtdApostas : 0;
+  const maxAbsGgr = Math.max(1, ...filtered.map((r) => Math.abs(Number(r.ggr) || 0)));
+
+  return (
+    <div style={S.reportPage}>
+      <div style={S.reportHeader}>
+        <button style={S.btnBack} onClick={onBack}>
+          <IconArrow left /> Voltar
+        </button>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>Relatórios Gerais</div>
+          <div style={{ fontSize: 11, color: "#444" }}>Dashboard interativo de resultados</div>
+        </div>
+      </div>
+
+      <div style={S.reportContent}>
+        <div style={S.reportTitle}>Relatórios Gerais</div>
+        <div style={S.reportSub}>Visão consolidada de todos os relatórios salvos — filtre pelo período do evento</div>
+
+        <div style={S.filterBar}>
+          <div style={{ fontSize: 12, color: "#555", marginRight: 4 }}>Período do evento:</div>
+          <input type="date" style={S.input} value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
+          <span style={{ color: "#444", fontSize: 13 }}>até</span>
+          <input type="date" style={S.input} value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
+          {(periodFrom || periodTo) && (
+            <button
+              style={{ ...S.btnDelete, padding: "8px 14px", fontSize: 12 }}
+              onClick={() => { setPeriodFrom(""); setPeriodTo(""); }}
+            >
+              Limpar
+            </button>
+          )}
+        </div>
+
+        {reports === null ? (
+          <div style={{ textAlign: "center", padding: 80, color: "#333", fontSize: 14 }}>Carregando...</div>
+        ) : filtered.length === 0 ? (
+          <div style={S.empty}>
+            <div style={S.emptyTitle}>Nenhum relatório no período</div>
+            <div style={{ fontSize: 13, color: "#333" }}>Ajuste o filtro ou salve novos relatórios a partir de uma boost</div>
+          </div>
+        ) : (
+          <>
+            <div style={S.statsGrid}>
+              {[
+                { label: "Relatórios", value: filtered.length, sub: "no período selecionado", color: "#E8E8EE" },
+                { label: "Total Stakes", value: fmt(totals.totalStake), sub: `${totals.qtdApostas} apostas`, color: "#E8E8EE" },
+                { label: "GGR", value: fmt(totals.ggr), sub: "Stake − Winnings", color: totals.ggr >= 0 ? "#00E5A0" : "#FF5A20" },
+                { label: "IDs Únicos", value: totals.idsUnicos, sub: "soma dos relatórios", color: "#A78BFA" },
+                { label: "Ticket Médio", value: fmt(ticketMedio), sub: "médio geral", color: "#FF9500" },
+                { label: "Wins", value: totals.wins, sub: "apostas ganhas", color: "#00E5A0" },
+                { label: "Lost", value: totals.lost, sub: "apostas perdidas", color: "#FF5A20" },
+                { label: "Cashout", value: totals.cashout, sub: "apostas encerradas", color: "#FF9500" },
+              ].map((s) => (
+                <div key={s.label} style={S.statCard}>
+                  <div style={S.statLabel}>{s.label}</div>
+                  <div style={{ ...S.statValue, color: s.color }}>{s.value}</div>
+                  <div style={S.statSub}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            <div style={S.tableWrap}>
+              <div style={S.tableHeader}>GGR por Confronto ({filtered.length})</div>
+              <div style={{ padding: "20px" }}>
+                {filtered.map((r) => {
+                  const ggr = Number(r.ggr) || 0;
+                  const pct = Math.min(100, (Math.abs(ggr) / maxAbsGgr) * 100);
+                  return (
+                    <div key={r.id} style={S.barRow}>
+                      <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12 }}>
+                        <span style={{ color: "#ccc", fontWeight: 600 }}>
+                          {r.welcome_boosts?.confronto || "-"}
+                          {r.welcome_boosts?.data_evento && (
+                            <span style={{ color: "#444", fontWeight: 400, marginLeft: 8 }}>{fmtDate(r.welcome_boosts.data_evento)}</span>
+                          )}
+                        </span>
+                        <span style={{ color: ggr >= 0 ? "#00E5A0" : "#FF5A20", fontWeight: 700 }}>{fmt(ggr)}</span>
+                      </div>
+                      <div style={S.barTrack}>
+                        <div
+                          style={{
+                            height: "100%", borderRadius: 6, width: `${pct}%`,
+                            background: ggr >= 0
+                              ? "linear-gradient(90deg, #00E5A0, #00B583)"
+                              : "linear-gradient(90deg, #FF5A20, #FF3A00)",
+                          }}
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          </>
+        )}
+      </div>
+    </div>
+  );
+}
+
 // ─── CARD ─────────────────────────────────────────────────────────────────────
-function BoostCard({ boost, onReport, onDelete }) {
+function BoostCard({ boost, report, onReport, onDelete }) {
   const status = computeStatus(boost);
   const cfg = statusConfig[status] || statusConfig.ativo;
   const boost_pct = boost.odd_antiga > 0
@@ -684,7 +847,45 @@ function BoostCard({ boost, onReport, onDelete }) {
           <span style={S.metaLabel}>Pedido por</span>
           <span style={S.metaValue}>{boost.pedido_por}</span>
         </div>
+        {boost.mercado && (
+          <div style={S.metaItem}>
+            <span style={S.metaLabel}>Mercado</span>
+            <span style={S.metaValue}>{boost.mercado}</span>
+          </div>
+        )}
       </div>
+
+      {report && (
+        <div style={S.reportBox}>
+          <div style={S.reportBoxTitle}><IconChart /> Resultado do Relatório</div>
+          <div style={S.reportBoxGrid}>
+            <div style={S.reportBoxItem}>
+              <span style={S.reportBoxLabel}>GGR</span>
+              <span style={{ ...S.reportBoxValue, color: report.ggr >= 0 ? "#00E5A0" : "#FF5A20" }}>{fmt(report.ggr)}</span>
+            </div>
+            <div style={S.reportBoxItem}>
+              <span style={S.reportBoxLabel}>Total Stakes</span>
+              <span style={S.reportBoxValue}>{fmt(report.total_stake)}</span>
+            </div>
+            <div style={S.reportBoxItem}>
+              <span style={S.reportBoxLabel}>IDs Únicos</span>
+              <span style={S.reportBoxValue}>{report.ids_unicos}</span>
+            </div>
+            <div style={S.reportBoxItem}>
+              <span style={S.reportBoxLabel}>Ticket Médio</span>
+              <span style={S.reportBoxValue}>{fmt(report.ticket_medio)}</span>
+            </div>
+            <div style={S.reportBoxItem}>
+              <span style={S.reportBoxLabel}>Wins / Lost</span>
+              <span style={S.reportBoxValue}>{report.wins} / {report.lost}</span>
+            </div>
+            <div style={S.reportBoxItem}>
+              <span style={S.reportBoxLabel}>Cashout</span>
+              <span style={S.reportBoxValue}>{report.cashout}</span>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={S.cardActions}>
         <button style={S.btnReport} onClick={() => onReport(boost)}>
@@ -701,11 +902,13 @@ function BoostCard({ boost, onReport, onDelete }) {
 // ─── APP ─────────────────────────────────────────────────────────────────────
 export default function App() {
   const [boosts, setBoosts] = useState([]);
+  const [reports, setReports] = useState([]);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [reportBoost, setReportBoost] = useState(null);
   const [showHistory, setShowHistory] = useState(false);
+  const [showDashboard, setShowDashboard] = useState(false);
   const [tab, setTab] = useState("todos");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
@@ -721,7 +924,22 @@ export default function App() {
     setLoading(false);
   }, []);
 
-  useEffect(() => { load(); }, [load]);
+  const loadReports = useCallback(async () => {
+    try {
+      const data = await api("GET", "boost_relatorios?order=created_at.desc");
+      setReports(data || []);
+    } catch (e) {
+      console.error(e);
+    }
+  }, []);
+
+  useEffect(() => { load(); loadReports(); }, [load, loadReports]);
+
+  // último relatório salvo de cada boost (reports já vem ordenado por created_at desc)
+  const latestReportByBoost = {};
+  for (const r of reports) {
+    if (!latestReportByBoost[r.boost_id]) latestReportByBoost[r.boost_id] = r;
+  }
 
   const save = async (form) => {
     setSaving(true);
@@ -737,6 +955,7 @@ export default function App() {
 
   const saveReport = async (report) => {
     await api("POST", "boost_relatorios", report);
+    await loadReports();
   };
 
   const remove = async (id) => {
@@ -768,6 +987,10 @@ export default function App() {
     return <HistoryPage onBack={() => setShowHistory(false)} />;
   }
 
+  if (showDashboard) {
+    return <DashboardPage onBack={() => setShowDashboard(false)} />;
+  }
+
   return (
     <>
       <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
@@ -784,6 +1007,9 @@ export default function App() {
               </div>
             </div>
             <div style={{ display: "flex", gap: 12 }}>
+              <button style={S.btnSecondary} onClick={() => setShowDashboard(true)}>
+                <IconChart /> Relatórios Gerais
+              </button>
               <button style={S.btnSecondary} onClick={() => setShowHistory(true)}>
                 <IconHistory /> Histórico de Relatórios
               </button>
@@ -836,7 +1062,7 @@ export default function App() {
           ) : (
             <div style={S.grid}>
               {filtered.map((b) => (
-                <BoostCard key={b.id} boost={b} onReport={setReportBoost} onDelete={remove} />
+                <BoostCard key={b.id} boost={b} report={latestReportByBoost[b.id]} onReport={setReportBoost} onDelete={remove} />
               ))}
             </div>
           )}
