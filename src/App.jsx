@@ -473,8 +473,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   const [dragging, setDragging] = useState(false);
   const [savingReport, setSavingReport] = useState(false);
   const [savedReport, setSavedReport] = useState(false);
-  const [marketFilter, setMarketFilter] = useState(boost.mercado || "");
-  const [excludeCombos, setExcludeCombos] = useState(true);
+  const [selectedMarkets, setSelectedMarkets] = useState(null); // null = ainda não inicializado
 
   const processFile = (file) => {
     const reader = new FileReader();
@@ -483,8 +482,48 @@ function ReportPage({ boost, onBack, onSaveReport }) {
       const ws = wb.Sheets[wb.SheetNames[0]];
       const data = XLSX.utils.sheet_to_json(ws, { defval: "" });
       setRows(data);
+      setSelectedMarkets(null);
     };
     reader.readAsArrayBuffer(file);
+  };
+
+  // Lista os mercados (Market types) presentes no arquivo, com a contagem de apostas de cada um
+  const marketOptions = rows
+    ? (() => {
+        const counts = new Map();
+        for (const r of rows) {
+          const m = r["Market types"] || "(sem mercado informado)";
+          counts.set(m, (counts.get(m) || 0) + 1);
+        }
+        return [...counts.entries()]
+          .sort((a, b) => b[1] - a[1])
+          .map(([value, count]) => ({ value, count }));
+      })()
+    : [];
+
+  // Na primeira leitura do arquivo, seleciona automaticamente os mercados que batem
+  // com o texto cadastrado em "Mercado" da boost (ou todos, se não houver match / não houver mercado definido)
+  useEffect(() => {
+    if (!rows || selectedMarkets !== null) return;
+    const wanted = (boost.mercado || "").trim().toLowerCase();
+    let initial;
+    if (wanted) {
+      const matches = marketOptions.filter((m) => m.value.toLowerCase().includes(wanted));
+      initial = matches.length > 0 ? matches.map((m) => m.value) : marketOptions.map((m) => m.value);
+    } else {
+      initial = marketOptions.map((m) => m.value);
+    }
+    setSelectedMarkets(new Set(initial));
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [rows]);
+
+  const toggleMarket = (value) => {
+    setSelectedMarkets((prev) => {
+      const next = new Set(prev);
+      if (next.has(value)) next.delete(value);
+      else next.add(value);
+      return next;
+    });
   };
 
   const onDrop = (e) => {
@@ -500,16 +539,10 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   };
 
   // Métricas
-  // Aplica os filtros de mercado escolhidos pelo usuário (texto + exclusão de combinadas)
-  const marketFiltered = rows
-    ? rows.filter((r) => {
-        const market = (r["Market types"] || "");
-        const marketLower = market.toLowerCase();
-        if (excludeCombos && (marketLower.includes("betbuilder") || market.includes("|"))) return false;
-        if (marketFilter.trim() && !marketLower.includes(marketFilter.trim().toLowerCase())) return false;
-        return true;
-      })
-    : null;
+  // Considera apenas as linhas cujo mercado (Market types) está marcado na lista de seleção
+  const marketFiltered = rows && selectedMarkets
+    ? rows.filter((r) => selectedMarkets.has(r["Market types"] || "(sem mercado informado)"))
+    : rows;
   const removedByMarket = rows ? rows.length - (marketFiltered?.length || 0) : 0;
 
   const stats = marketFiltered
@@ -607,34 +640,60 @@ function ReportPage({ boost, onBack, onSaveReport }) {
         ) : (
           <>
             <div style={{ ...S.uploadZone, padding: "16px 20px", textAlign: "left", marginBottom: 24, cursor: "default", background: "rgba(255,255,255,0.02)" }}>
-              <div style={{ fontSize: 12, fontWeight: 700, color: "#ccc", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.6 }}>
-                Filtrar apostas consideradas no relatório
-              </div>
-              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
-                <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 220 }}>
-                  <span style={S.label}>Mercado deve conter o texto</span>
-                  <input
-                    style={{ ...S.input, width: "100%", boxSizing: "border-box" }}
-                    placeholder="Ex: 1x2, Vencedor do encontro, Match Winner..."
-                    value={marketFilter}
-                    onChange={(e) => setMarketFilter(e.target.value)}
-                  />
+              <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "#ccc", textTransform: "uppercase", letterSpacing: 0.6 }}>
+                  Mercados encontrados no arquivo ({marketOptions.length})
                 </div>
-                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#ccc", cursor: "pointer", marginTop: 18 }}>
-                  <input type="checkbox" checked={excludeCombos} onChange={(e) => setExcludeCombos(e.target.checked)} />
-                  Excluir apostas combinadas (Bet Builder / múltiplas)
-                </label>
-                <button
-                  style={{ ...S.btnDelete, padding: "8px 14px", fontSize: 12, marginTop: 18 }}
-                  onClick={() => { setMarketFilter(""); setExcludeCombos(false); }}
-                >
-                  Limpar filtros
-                </button>
+                <div style={{ display: "flex", gap: 8 }}>
+                  <button
+                    style={{ ...S.btnSecondary, padding: "6px 14px", fontSize: 11 }}
+                    onClick={() => setSelectedMarkets(new Set(marketOptions.map((m) => m.value)))}
+                  >
+                    Selecionar todos
+                  </button>
+                  <button
+                    style={{ ...S.btnDelete, padding: "6px 14px", fontSize: 11 }}
+                    onClick={() => setSelectedMarkets(new Set())}
+                  >
+                    Limpar seleção
+                  </button>
+                </div>
               </div>
+
+              <div style={{ fontSize: 11, color: "#555", marginBottom: 10 }}>
+                Marque os mercados que devem entrar no cálculo do relatório (ex: apenas "Vencedor do encontro" / "1x2") e desmarque o restante (ex: apostas combinadas / Bet Builder com condições extras).
+              </div>
+
+              <div style={{ maxHeight: 260, overflowY: "auto", display: "flex", flexDirection: "column", gap: 6, paddingRight: 6 }}>
+                {marketOptions.map((opt) => (
+                  <label
+                    key={opt.value}
+                    style={{
+                      display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "#ccc",
+                      cursor: "pointer", padding: "7px 10px", borderRadius: 8,
+                      background: selectedMarkets?.has(opt.value) ? "rgba(255,90,32,0.06)" : "rgba(255,255,255,0.02)",
+                      border: `1px solid ${selectedMarkets?.has(opt.value) ? "rgba(255,90,32,0.18)" : "rgba(255,255,255,0.04)"}`,
+                    }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={selectedMarkets?.has(opt.value) || false}
+                      onChange={() => toggleMarket(opt.value)}
+                    />
+                    <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={opt.value}>
+                      {opt.value}
+                    </span>
+                    <span style={{ color: "#555", fontSize: 11, flexShrink: 0 }}>{opt.count} apostas</span>
+                  </label>
+                ))}
+              </div>
+
               <div style={{ fontSize: 11, color: "#555", marginTop: 12 }}>
-                {removedByMarket > 0
-                  ? `${removedByMarket} de ${rows.length} apostas do arquivo foram ignoradas pelos filtros acima — restaram ${marketFiltered.length} para o cálculo.`
-                  : `Nenhuma aposta foi ignorada — todas as ${rows.length} linhas do arquivo entram no cálculo.`}
+                {selectedMarkets ? (
+                  removedByMarket > 0
+                    ? `${selectedMarkets.size} de ${marketOptions.length} mercados selecionados — ${removedByMarket} de ${rows.length} apostas foram ignoradas, restaram ${marketFiltered.length} para o cálculo.`
+                    : `${selectedMarkets.size} de ${marketOptions.length} mercados selecionados — todas as ${rows.length} apostas entram no cálculo.`
+                ) : "Carregando mercados..."}
               </div>
             </div>
 
