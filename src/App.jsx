@@ -430,7 +430,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
     ? (() => {
         const valid = rows.filter((r) => {
           const status = (r["Status"] || "").toLowerCase();
-          return status !== "voidcashout";
+          return status !== "voidcashout" && status !== "void";
         });
         const totalStake = valid.reduce((s, r) => s + (parseFloat(r["Stake"]) || 0), 0);
         const totalWin = valid.reduce((s, r) => s + (parseFloat(r["Winnings"]) || 0), 0);
