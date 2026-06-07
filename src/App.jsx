@@ -508,12 +508,23 @@ function ReportPage({ boost, onBack, onSaveReport }) {
         const totalWin = valid.reduce((s, r) => s + (parseFloat(r["Winnings"]) || 0), 0);
         const ggr = totalStake - totalWin;
         const qtdApostas = valid.length;
-        const ids = new Set(valid.map((r) => r["Player"] || r["Player Id"] || r["External User Id"]));
+        // "Usuários" considera TODAS as apostas (inclusive anuladas/void), pois é assim
+        // que a plataforma calcula "Overall users" — um usuário continua sendo um
+        // usuário do mercado mesmo que sua aposta tenha sido anulada depois.
+        const idGetter = (r) => r["Player"] || r["Player Id"] || r["External User Id"];
+        const idsTodas = new Set(rows.map(idGetter));
+        const idsValidas = new Set(valid.map(idGetter));
         const ticketMedio = qtdApostas > 0 ? totalStake / qtdApostas : 0;
         const wins = valid.filter((r) => (r["Status"] || "").toLowerCase() === "win").length;
         const lost = valid.filter((r) => (r["Status"] || "").toLowerCase() === "lost").length;
         const cashout = valid.filter((r) => (r["Status"] || "").toLowerCase() === "cashout").length;
-        return { totalStake, ggr, qtdApostas, idsUnicos: ids.size, ticketMedio, wins, lost, cashout, valid };
+        return {
+          totalStake, ggr, qtdApostas,
+          idsUnicos: idsTodas.size,
+          idsUnicosValidas: idsValidas.size,
+          totalApostasGeral: rows.length,
+          ticketMedio, wins, lost, cashout, valid,
+        };
       })()
     : null;
 
@@ -582,9 +593,9 @@ function ReportPage({ boost, onBack, onSaveReport }) {
           <>
             <div style={S.statsGrid} className="stats-grid">
               {[
-                { label: "Total Stakes", value: fmt(stats.totalStake), sub: `${stats.qtdApostas} apostas`, color: "#E8E8EE" },
+                { label: "Total Stakes", value: fmt(stats.totalStake), sub: `${stats.qtdApostas} apostas válidas de ${stats.totalApostasGeral}`, color: "#E8E8EE" },
                 { label: "GGR", value: fmt(stats.ggr), sub: "Stake − Winnings", color: stats.ggr >= 0 ? "#00E5A0" : "#FF5A20" },
-                { label: "Usuários", value: stats.idsUnicos, sub: "usuários únicos", color: "#A78BFA" },
+                { label: "Usuários", value: stats.idsUnicos, sub: `únicos no total · ${stats.idsUnicosValidas} em apostas válidas`, color: "#A78BFA" },
                 { label: "Ticket Médio", value: fmt(stats.ticketMedio), sub: "por aposta", color: "#FF9500" },
                 { label: "Wins", value: stats.wins, sub: `${stats.qtdApostas > 0 ? ((stats.wins / stats.qtdApostas) * 100).toFixed(1) : 0}% do total`, color: "#00E5A0" },
                 { label: "Lost", value: stats.lost, sub: `${stats.qtdApostas > 0 ? ((stats.lost / stats.qtdApostas) * 100).toFixed(1) : 0}% do total`, color: "#FF5A20" },
