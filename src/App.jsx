@@ -473,6 +473,8 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   const [dragging, setDragging] = useState(false);
   const [savingReport, setSavingReport] = useState(false);
   const [savedReport, setSavedReport] = useState(false);
+  const [marketFilter, setMarketFilter] = useState(boost.mercado || "");
+  const [excludeCombos, setExcludeCombos] = useState(true);
 
   const processFile = (file) => {
     const reader = new FileReader();
@@ -498,8 +500,21 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   };
 
   // Métricas
-  const stats = rows
+  // Aplica os filtros de mercado escolhidos pelo usuário (texto + exclusão de combinadas)
+  const marketFiltered = rows
+    ? rows.filter((r) => {
+        const market = (r["Market types"] || "");
+        const marketLower = market.toLowerCase();
+        if (excludeCombos && (marketLower.includes("betbuilder") || market.includes("|"))) return false;
+        if (marketFilter.trim() && !marketLower.includes(marketFilter.trim().toLowerCase())) return false;
+        return true;
+      })
+    : null;
+  const removedByMarket = rows ? rows.length - (marketFiltered?.length || 0) : 0;
+
+  const stats = marketFiltered
     ? (() => {
+        const rows = marketFiltered;
         const valid = rows.filter((r) => {
           const status = (r["Status"] || "").toLowerCase();
           return status !== "voidcashout" && status !== "void";
@@ -591,6 +606,38 @@ function ReportPage({ boost, onBack, onSaveReport }) {
           </div>
         ) : (
           <>
+            <div style={{ ...S.uploadZone, padding: "16px 20px", textAlign: "left", marginBottom: 24, cursor: "default", background: "rgba(255,255,255,0.02)" }}>
+              <div style={{ fontSize: 12, fontWeight: 700, color: "#ccc", marginBottom: 12, textTransform: "uppercase", letterSpacing: 0.6 }}>
+                Filtrar apostas consideradas no relatório
+              </div>
+              <div style={{ display: "flex", gap: 14, flexWrap: "wrap", alignItems: "center" }}>
+                <div style={{ display: "flex", flexDirection: "column", gap: 6, flex: 1, minWidth: 220 }}>
+                  <span style={S.label}>Mercado deve conter o texto</span>
+                  <input
+                    style={{ ...S.input, width: "100%", boxSizing: "border-box" }}
+                    placeholder="Ex: 1x2, Vencedor do encontro, Match Winner..."
+                    value={marketFilter}
+                    onChange={(e) => setMarketFilter(e.target.value)}
+                  />
+                </div>
+                <label style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13, color: "#ccc", cursor: "pointer", marginTop: 18 }}>
+                  <input type="checkbox" checked={excludeCombos} onChange={(e) => setExcludeCombos(e.target.checked)} />
+                  Excluir apostas combinadas (Bet Builder / múltiplas)
+                </label>
+                <button
+                  style={{ ...S.btnDelete, padding: "8px 14px", fontSize: 12, marginTop: 18 }}
+                  onClick={() => { setMarketFilter(""); setExcludeCombos(false); }}
+                >
+                  Limpar filtros
+                </button>
+              </div>
+              <div style={{ fontSize: 11, color: "#555", marginTop: 12 }}>
+                {removedByMarket > 0
+                  ? `${removedByMarket} de ${rows.length} apostas do arquivo foram ignoradas pelos filtros acima — restaram ${marketFiltered.length} para o cálculo.`
+                  : `Nenhuma aposta foi ignorada — todas as ${rows.length} linhas do arquivo entram no cálculo.`}
+              </div>
+            </div>
+
             <div style={S.statsGrid} className="stats-grid">
               {[
                 { label: "Total Stakes", value: fmt(stats.totalStake), sub: `${stats.qtdApostas} apostas válidas de ${stats.totalApostasGeral}`, color: "#E8E8EE" },
