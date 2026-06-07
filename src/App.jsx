@@ -682,7 +682,16 @@ function DashboardPage({ onBack }) {
     return () => { cancelled = true; };
   }, []);
 
-  const filtered = (reports || []).filter((r) => {
+  // Considera apenas o relatório mais recente de cada boost (reports vem ordenado
+  // por created_at desc), para ficar consistente com o que é exibido nos cards —
+  // evita somar em duplicidade quando uma mesma boost teve o relatório salvo mais de uma vez.
+  const latestByBoost = {};
+  for (const r of reports || []) {
+    if (!latestByBoost[r.boost_id]) latestByBoost[r.boost_id] = r;
+  }
+  const uniqueReports = Object.values(latestByBoost);
+
+  const filtered = uniqueReports.filter((r) => {
     const ev = r.welcome_boosts?.data_evento ? new Date(r.welcome_boosts.data_evento) : null;
     if (periodFrom && (!ev || ev < new Date(periodFrom))) return false;
     if (periodTo && (!ev || ev > new Date(periodTo + "T23:59:59"))) return false;
