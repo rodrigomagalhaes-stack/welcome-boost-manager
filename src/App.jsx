@@ -1,4 +1,4 @@
-import { useState, useEffect, useCallback } from "react";
+import { useState, useEffect, useCallback, useMemo } from "react";
 import * as XLSX from "xlsx";
 
 const SUPABASE_URL = "https://lfuhmhubafgjqzuueyzw.supabase.co";
@@ -474,6 +474,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   const [savingReport, setSavingReport] = useState(false);
   const [savedReport, setSavedReport] = useState(false);
   const [selectedMarkets, setSelectedMarkets] = useState(null); // null = ainda não inicializado
+  const [tableLimit, setTableLimit] = useState(100);
 
   const processFile = (file) => {
     const reader = new FileReader();
@@ -488,23 +489,23 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   };
 
   // Lista os mercados (Market types) presentes no arquivo, com a contagem de apostas de cada um
-  const marketOptions = rows
-    ? (() => {
-        const counts = new Map();
-        for (const r of rows) {
-          const m = r["Market types"] || "(sem mercado informado)";
-          counts.set(m, (counts.get(m) || 0) + 1);
-        }
-        return [...counts.entries()]
-          .sort((a, b) => b[1] - a[1])
-          .map(([value, count]) => ({ value, count }));
-      })()
-    : [];
+  // (memoizado: só recalcula quando o arquivo muda, não a cada clique na caixinha)
+  const marketOptions = useMemo(() => {
+    if (!rows) return [];
+    const counts = new Map();
+    for (const r of rows) {
+      const m = r["Market types"] || "(sem mercado informado)";
+      counts.set(m, (counts.get(m) || 0) + 1);
+    }
+    return [...counts.entries()]
+      .sort((a, b) => b[1] - a[1])
+      .map(([value, count]) => ({ value, count }));
+  }, [rows]);
 
   // Na primeira leitura do arquivo, seleciona automaticamente os mercados que batem
   // com o texto cadastrado em "Mercado" da boost (ou todos, se não houver match / não houver mercado definido)
   useEffect(() => {
-    if (!rows || selectedMarkets !== null) return;
+    if (!rows || selectedMarkets !== null || marketOptions.length === 0) return;
     const wanted = (boost.mercado || "").trim().toLowerCase();
     let initial;
     if (wanted) {
@@ -515,16 +516,17 @@ function ReportPage({ boost, onBack, onSaveReport }) {
     }
     setSelectedMarkets(new Set(initial));
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [rows]);
+  }, [rows, marketOptions]);
 
-  const toggleMarket = (value) => {
+  const toggleMarket = useCallback((value) => {
+    setTableLimit(100);
     setSelectedMarkets((prev) => {
       const next = new Set(prev);
       if (next.has(value)) next.delete(value);
       else next.add(value);
       return next;
     });
-  };
+  }, []);
 
   const onDrop = (e) => {
     e.preventDefault();
@@ -538,43 +540,53 @@ function ReportPage({ boost, onBack, onSaveReport }) {
     if (file) processFile(file);
   };
 
-  // Métricas
-  // Considera apenas as linhas cujo mercado (Market types) está marcado na lista de seleção
-  const marketFiltered = rows && selectedMarkets
-    ? rows.filter((r) => selectedMarkets.has(r["Market types"] || "(sem mercado informado)"))
-    : rows;
-  const removedByMarket = rows ? rows.length - (marketFiltered?.length || 0) : 0;
+  // Métricas — tudo memoizado e calculado em uma única passada pelas linhas,
+  // recalculando somente quando o arquivo ou a seleção de mercados mudar
+  // (evita travamentos ao marcar/desmarcar caixinhas em arquivos grandes)
+  const { marketFiltered, removedByMarket, stats } = useMemo(() => {
+    if (!rows) return { marketFiltered: null, removedByMarket: 0, stats: null };
+    const filtered = selectedMarkets
+      ? rows.filter((r) => selectedMarkets.has(r["Market types"] || "(sem mercado informado)"))
+      : rows;
 
-  const stats = marketFiltered
-    ? (() => {
-        const rows = marketFiltered;
-        const valid = rows.filter((r) => {
-          const status = (r["Status"] || "").toLowerCase();
-          return status !== "voidcashout" && status !== "void";
-        });
-        const totalStake = valid.reduce((s, r) => s + (parseFloat(r["Stake"]) || 0), 0);
-        const totalWin = valid.reduce((s, r) => s + (parseFloat(r["Winnings"]) || 0), 0);
-        const ggr = totalStake - totalWin;
-        const qtdApostas = valid.length;
-        // "Usuários" considera TODAS as apostas (inclusive anuladas/void), pois é assim
-        // que a plataforma calcula "Overall users" — um usuário continua sendo um
-        // usuário do mercado mesmo que sua aposta tenha sido anulada depois.
-        const idGetter = (r) => r["Player"] || r["Player Id"] || r["External User Id"];
-        const idsTodas = new Set(rows.map(idGetter));
-        const idsValidas = new Set(valid.map(idGetter));
-        const ticketMedio = qtdApostas > 0 ? totalStake / qtdApostas : 0;
-        const wins = valid.filter((r) => (r["Status"] || "").toLowerCase() === "win").length;
-        const lost = valid.filter((r) => (r["Status"] || "").toLowerCase() === "lost").length;
-        const cashout = valid.filter((r) => (r["Status"] || "").toLowerCase() === "cashout").length;
-        return {
-          totalStake, ggr, qtdApostas,
-          idsUnicos: idsTodas.size,
-          idsUnicosValidas: idsValidas.size,
-          totalApostasGeral: rows.length,
-          ticketMedio, wins, lost, cashout, valid,
-        };
-      })()
-    : null;
+    const idGetter = (r) => r["Player"] || r["Player Id"] || r["External User Id"];
+    const idsTodas = new Set();
+    const idsValidas = new Set();
+    let totalStake = 0, totalWin = 0, qtdApostas = 0, wins = 0, lost = 0, cashout = 0;
+    const valid = [];
+
+    for (const r of filtered) {
+      const status = (r["Status"] || "").toLowerCase();
+      idsTodas.add(idGetter(r));
+      if (status === "voidcashout" || status === "void") continue;
+
+      valid.push(r);
+      idsValidas.add(idGetter(r));
+      qtdApostas++;
+      totalStake += parseFloat(r["Stake"]) || 0;
+      totalWin += parseFloat(r["Winnings"]) || 0;
+      if (status === "win") wins++;
+      else if (status === "lost") lost++;
+      else if (status === "cashout") cashout++;
+    }
+
+    const ggr = totalStake - totalWin;
+    const ticketMedio = qtdApostas > 0 ? totalStake / qtdApostas : 0;
+
+    const computedStats = {
+      totalStake, ggr, qtdApostas,
+      idsUnicos: idsTodas.size,
+      idsUnicosValidas: idsValidas.size,
+      totalApostasGeral: filtered.length,
+      ticketMedio, wins, lost, cashout, valid,
+    };
+
+    return {
+      marketFiltered: filtered,
+      removedByMarket: rows.length - filtered.length,
+      stats: computedStats,
+    };
+  }, [rows, selectedMarkets]);
 
   const saveReport = async () => {
     if (!stats) return;
@@ -724,7 +736,9 @@ function ReportPage({ boost, onBack, onSaveReport }) {
             </button>
 
             <div style={S.tableWrap} className="table-wrap">
-              <div style={S.tableHeader}>Apostas ({stats.valid.length})</div>
+              <div style={S.tableHeader}>
+                Apostas ({stats.valid.length}){stats.valid.length > tableLimit ? ` — exibindo ${Math.min(tableLimit, stats.valid.length)}` : ""}
+              </div>
               <div style={{ overflowX: "auto" }}>
                 <table style={S.table}>
                   <thead>
@@ -735,7 +749,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
                     </tr>
                   </thead>
                   <tbody>
-                    {stats.valid.map((r, i) => {
+                    {stats.valid.slice(0, tableLimit).map((r, i) => {
                       const stake = parseFloat(r["Stake"]) || 0;
                       const win = parseFloat(r["Winnings"]) || 0;
                       const rowGgr = stake - win;
@@ -756,11 +770,21 @@ function ReportPage({ boost, onBack, onSaveReport }) {
                   </tbody>
                 </table>
               </div>
+              {stats.valid.length > tableLimit && (
+                <div style={{ padding: "14px 20px", textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+                  <button
+                    style={{ ...S.btnSecondary, padding: "8px 18px", fontSize: 12 }}
+                    onClick={() => setTableLimit((n) => n + 100)}
+                  >
+                    Carregar mais ({stats.valid.length - tableLimit} restantes)
+                  </button>
+                </div>
+              )}
             </div>
 
             <button
               style={{ ...S.btnReport, marginTop: 20, width: "auto", padding: "10px 20px" }}
-              onClick={() => { setRows(null); setSavedReport(false); }}
+              onClick={() => { setRows(null); setSavedReport(false); setTableLimit(100); }}
             >
               Carregar outro arquivo
             </button>
