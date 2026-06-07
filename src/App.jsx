@@ -211,7 +211,7 @@ const S = {
   matchupCenter: { minWidth: 0 },
   confronto: {
     fontSize: 16, fontWeight: 700, letterSpacing: -0.4, color: "#fff", lineHeight: 1.3,
-    overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap",
+    overflowWrap: "anywhere", wordBreak: "break-word",
   },
   confrontoVs: { color: "#FF5A20" },
   idJogo: { fontSize: 11, color: "#444", marginTop: 3, fontFamily: "monospace" },
@@ -1068,8 +1068,15 @@ export default function App() {
 
   const remove = async (id) => {
     if (!confirm("Excluir este boost?")) return;
-    await api("DELETE", `welcome_boosts?id=eq.${id}`);
-    await load();
+    try {
+      // remove relatórios vinculados primeiro (evita erro de chave estrangeira)
+      await api("DELETE", `boost_relatorios?boost_id=eq.${id}`);
+      await api("DELETE", `welcome_boosts?id=eq.${id}`);
+      await load();
+      await loadReports();
+    } catch (err) {
+      alert("Não foi possível excluir esta boost: " + err.message);
+    }
   };
 
   const filtered = boosts.filter((b) => {
