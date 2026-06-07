@@ -4,3 +4,125 @@ input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   filter: invert(0.5);
 }
+
+/* ─── RESPONSIVE OVERRIDES ───────────────────────────────────────────── */
+
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+.table-wrap table {
+  min-width: 540px;
+}
+
+@media (max-width: 720px) {
+  .app-main {
+    padding-left: 16px !important;
+    padding-right: 16px !important;
+  }
+
+  .app-header {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 16px;
+    padding-top: 22px !important;
+    padding-bottom: 24px !important;
+  }
+  .app-header .btn-primary {
+    width: 100%;
+    justify-content: center;
+  }
+
+  .app-tabs {
+    width: 100%;
+    overflow-x: auto;
+    -webkit-overflow-scrolling: touch;
+  }
+
+  .filter-bar {
+    flex-direction: column;
+    align-items: stretch !important;
+  }
+  .filter-bar > * {
+    width: 100% !important;
+    box-sizing: border-box;
+  }
+
+  .app-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .card-header {
+    flex-wrap: wrap;
+  }
+
+  .matchup {
+    width: 100%;
+  }
+
+  .confronto {
+    white-space: normal !important;
+    overflow: visible !important;
+    text-overflow: clip !important;
+    word-break: break-word;
+  }
+
+  .meta-row {
+    gap: 10px 16px !important;
+  }
+
+  .form-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .form-group-full,
+  .form-grid > * {
+    grid-column: 1 / -1 !important;
+  }
+
+  .stats-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .report-box-grid {
+    grid-template-columns: repeat(2, 1fr) !important;
+  }
+
+  .modal {
+    max-width: 100% !important;
+    border-radius: 16px !important;
+  }
+  .modal-header {
+    padding: 20px 18px 0 !important;
+  }
+  .modal-body {
+    padding: 18px !important;
+  }
+
+  .report-header {
+    flex-wrap: wrap;
+    gap: 10px !important;
+    padding: 16px 20px !important;
+  }
+
+  .report-content {
+    padding: 24px 16px !important;
+  }
+
+  .report-title {
+    font-size: 22px !important;
+  }
+}
+
+@media (max-width: 420px) {
+  .stats-grid,
+  .report-box-grid {
+    grid-template-columns: 1fr !important;
+  }
+
+  .avatar-circle {
+    width: 34px !important;
+    height: 34px !important;
+    font-size: 11px !important;
+  }
+}

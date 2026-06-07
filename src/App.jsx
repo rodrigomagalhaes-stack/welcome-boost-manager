@@ -405,16 +405,16 @@ function FormModal({ onClose, onSave, loading }) {
 
   return (
     <div style={S.overlay} onClick={(e) => e.target === e.currentTarget && onClose()}>
-      <div style={S.modal}>
-        <div style={S.modalHeader}>
+      <div style={S.modal} className="modal">
+        <div style={S.modalHeader} className="modal-header">
           <span style={S.modalTitle}>Nova Welcome Boost</span>
           <button onClick={onClose} style={{ background: "none", border: "none", color: "#555", cursor: "pointer" }}>
             <IconClose />
           </button>
         </div>
-        <div style={S.modalBody}>
-          <div style={S.formGrid}>
-            <div style={S.formGroupFull}>
+        <div style={S.modalBody} className="modal-body">
+          <div style={S.formGrid} className="form-grid">
+            <div style={S.formGroupFull} className="form-group-full">
               <span style={S.label}>Confronto</span>
               <input style={inputStyle} placeholder="Ex: Brazil vs. Egypt" value={form.confronto} onChange={set("confronto")} />
             </div>
@@ -433,15 +433,15 @@ function FormModal({ onClose, onSave, loading }) {
                 <option>Rodrigo</option>
               </select>
             </div>
-            <div style={S.formGroupFull}>
+            <div style={S.formGroupFull} className="form-group-full">
               <span style={S.label}>Pedido por</span>
               <input style={inputStyle} placeholder="Nome de quem solicitou" value={form.pedido_por} onChange={set("pedido_por")} />
             </div>
-            <div style={S.formGroupFull}>
+            <div style={S.formGroupFull} className="form-group-full">
               <span style={S.label}>Data e Hora do Evento</span>
               <input type="datetime-local" style={inputStyle} value={form.data_evento} onChange={set("data_evento")} />
             </div>
-            <div style={S.formGroupFull}>
+            <div style={S.formGroupFull} className="form-group-full">
               <span style={S.label}>Feito em (data e horário)</span>
               <input type="datetime-local" style={inputStyle} value={form.feito_em} onChange={set("feito_em")} />
             </div>
@@ -453,7 +453,7 @@ function FormModal({ onClose, onSave, loading }) {
               <span style={S.label}>Odd Nova (Boost)</span>
               <input style={inputStyle} type="number" step="0.01" placeholder="Ex: 2.00" value={form.odd_nova} onChange={set("odd_nova")} />
             </div>
-            <div style={S.formGroupFull}>
+            <div style={S.formGroupFull} className="form-group-full">
               <span style={S.label}>Max Stake (R$)</span>
               <input style={inputStyle} type="number" step="0.01" placeholder="Ex: 100.00" value={form.max_stake} onChange={set("max_stake")} />
             </div>
@@ -549,7 +549,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
 
   return (
     <div style={S.reportPage}>
-      <div style={S.reportHeader}>
+      <div style={S.reportHeader} className="report-header">
         <button style={S.btnBack} onClick={onBack}>
           <IconArrow left /> Voltar
         </button>
@@ -559,8 +559,8 @@ function ReportPage({ boost, onBack, onSaveReport }) {
         </div>
       </div>
 
-      <div style={S.reportContent}>
-        <div style={S.reportTitle}>Relatório de Resultado</div>
+      <div style={S.reportContent} className="report-content">
+        <div style={S.reportTitle} className="report-title">Relatório de Resultado</div>
         <div style={S.reportSub}>
           Odd: {boost.odd_antiga} → {boost.odd_nova} &nbsp;·&nbsp; Max Stake: {fmt(boost.max_stake)} &nbsp;·&nbsp; Evento: {fmtDate(boost.data_evento)}
         </div>
@@ -580,7 +580,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
           </div>
         ) : (
           <>
-            <div style={S.statsGrid}>
+            <div style={S.statsGrid} className="stats-grid">
               {[
                 { label: "Total Stakes", value: fmt(stats.totalStake), sub: `${stats.qtdApostas} apostas`, color: "#E8E8EE" },
                 { label: "GGR", value: fmt(stats.ggr), sub: "Stake − Winnings", color: stats.ggr >= 0 ? "#00E5A0" : "#FF5A20" },
@@ -606,7 +606,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
               <IconSave /> {savedReport ? "Relatório Salvo ✓" : savingReport ? "Salvando..." : "Salvar Relatório"}
             </button>
 
-            <div style={S.tableWrap}>
+            <div style={S.tableWrap} className="table-wrap">
               <div style={S.tableHeader}>Apostas ({stats.valid.length})</div>
               <div style={{ overflowX: "auto" }}>
                 <table style={S.table}>
@@ -677,7 +677,7 @@ function HistoryPage({ onBack }) {
 
   return (
     <div style={S.reportPage}>
-      <div style={S.reportHeader}>
+      <div style={S.reportHeader} className="report-header">
         <button style={S.btnBack} onClick={onBack}>
           <IconArrow left /> Voltar
         </button>
@@ -687,8 +687,8 @@ function HistoryPage({ onBack }) {
         </div>
       </div>
 
-      <div style={S.reportContent}>
-        <div style={S.reportTitle}>Histórico de Relatórios</div>
+      <div style={S.reportContent} className="report-content">
+        <div style={S.reportTitle} className="report-title">Histórico de Relatórios</div>
         <div style={S.reportSub}>Relatórios de resultado salvos no Supabase</div>
 
         {reports === null ? (
@@ -699,7 +699,7 @@ function HistoryPage({ onBack }) {
             <div style={{ fontSize: 13, color: "#333" }}>Salve um relatório a partir da tela de uma Welcome Boost</div>
           </div>
         ) : (
-          <div style={S.tableWrap}>
+          <div style={S.tableWrap} className="table-wrap">
             <div style={S.tableHeader}>Relatórios ({reports.length})</div>
             <div style={{ overflowX: "auto" }}>
               <table style={S.table}>
@@ -788,7 +788,7 @@ function DashboardPage({ onBack }) {
 
   return (
     <div style={S.reportPage}>
-      <div style={S.reportHeader}>
+      <div style={S.reportHeader} className="report-header">
         <button style={S.btnBack} onClick={onBack}>
           <IconArrow left /> Voltar
         </button>
@@ -798,8 +798,8 @@ function DashboardPage({ onBack }) {
         </div>
       </div>
 
-      <div style={S.reportContent}>
-        <div style={S.reportTitle}>Relatórios Gerais</div>
+      <div style={S.reportContent} className="report-content">
+        <div style={S.reportTitle} className="report-title">Relatórios Gerais</div>
         <div style={S.reportSub}>Visão consolidada de todos os relatórios salvos — filtre pelo período do evento</div>
 
         <div style={S.filterBar}>
@@ -826,7 +826,7 @@ function DashboardPage({ onBack }) {
           </div>
         ) : (
           <>
-            <div style={S.statsGrid}>
+            <div style={S.statsGrid} className="stats-grid">
               {[
                 { label: "Relatórios", value: filtered.length, sub: "no período selecionado", color: "#E8E8EE" },
                 { label: "Total Stakes", value: fmt(totals.totalStake), sub: `${totals.qtdApostas} apostas`, color: "#E8E8EE" },
@@ -845,7 +845,7 @@ function DashboardPage({ onBack }) {
               ))}
             </div>
 
-            <div style={S.tableWrap}>
+            <div style={S.tableWrap} className="table-wrap">
               <div style={S.tableHeader}>GGR por Confronto ({filtered.length})</div>
               <div style={{ padding: "20px" }}>
                 {filtered.map((r) => {
@@ -898,16 +898,16 @@ function BoostCard({ boost, report, onReport, onDelete }) {
   return (
     <div style={S.card}>
       <div style={S.cardAccent(cfg.color)} />
-      <div style={S.cardHeader}>
-        <div style={S.matchup}>
-          <div style={S.avatar(colorA)}>{initials(teamA)}</div>
+      <div style={S.cardHeader} className="card-header">
+        <div style={S.matchup} className="matchup">
+          <div style={S.avatar(colorA)} className="avatar-circle">{initials(teamA)}</div>
           <div style={S.matchupCenter}>
-            <div style={S.confronto}>
+            <div style={S.confronto} className="confronto">
               {teamA}{teamB && <> <span style={S.confrontoVs}>vs</span> {teamB}</>}
             </div>
             <div style={S.idJogo}>ID {boost.id_jogo}</div>
           </div>
-          {teamB && <div style={S.avatar(colorB)}>{initials(teamB)}</div>}
+          {teamB && <div style={S.avatar(colorB)} className="avatar-circle">{initials(teamB)}</div>}
         </div>
         <span style={S.badge(cfg.color, cfg.bg)}>{cfg.label}</span>
       </div>
@@ -920,7 +920,7 @@ function BoostCard({ boost, report, onReport, onDelete }) {
         <span style={S.maxStake}>Max {fmt(boost.max_stake)}</span>
       </div>
 
-      <div style={S.metaRow}>
+      <div style={S.metaRow} className="meta-row">
         <div style={S.metaRowItem}>
           <span style={S.metaRowIconWrap}><IconCalendar /></span>
           <span style={S.metaRowText}>
@@ -966,7 +966,7 @@ function BoostCard({ boost, report, onReport, onDelete }) {
       {report && (
         <div style={S.reportBox}>
           <div style={S.reportBoxTitle}><IconChart /> Resultado do Relatório</div>
-          <div style={S.reportBoxGrid}>
+          <div style={S.reportBoxGrid} className="report-box-grid">
             <div style={S.reportBoxItem}>
               <span style={S.reportBoxLabel}>GGR</span>
               <span style={{ ...S.reportBoxValue, color: report.ggr >= 0 ? "#00E5A0" : "#FF5A20" }}>{fmt(report.ggr)}</span>
@@ -1105,8 +1105,8 @@ export default function App() {
       <div style={S.app}>
         <div style={S.noise} />
         <div style={S.glow} />
-        <div style={S.main}>
-          <div style={S.header}>
+        <div style={S.main} className="app-main">
+          <div style={S.header} className="app-header">
             <div style={S.logo}>
               <div style={S.logoMark}>W</div>
               <div>
@@ -1121,13 +1121,13 @@ export default function App() {
               <button style={S.btnSecondary} onClick={() => setShowHistory(true)}>
                 <IconHistory /> Histórico de Relatórios
               </button>
-              <button style={S.btnPrimary} onClick={() => setShowForm(true)}>
+              <button style={S.btnPrimary} className="btn-primary" onClick={() => setShowForm(true)}>
                 <IconPlus /> Nova Boost
               </button>
             </div>
           </div>
 
-          <div style={S.tabs}>
+          <div style={S.tabs} className="app-tabs">
             {[
               { key: "todos", label: `Todos (${counts.todos})` },
               { key: "ativo", label: `Ativos (${counts.ativo})` },
@@ -1139,7 +1139,7 @@ export default function App() {
             ))}
           </div>
 
-          <div style={S.filterBar}>
+          <div style={S.filterBar} className="filter-bar">
             <div style={{ fontSize: 12, color: "#555", marginRight: 4 }}>Filtrar por evento:</div>
             <input
               type="date" style={S.input}
@@ -1168,7 +1168,7 @@ export default function App() {
               <div style={{ fontSize: 13, color: "#333" }}>Cadastre uma nova ou ajuste os filtros</div>
             </div>
           ) : (
-            <div style={S.grid}>
+            <div style={S.grid} className="app-grid">
               {filtered.map((b) => (
                 <BoostCard key={b.id} boost={b} report={latestReportByBoost[b.id]} onReport={setReportBoost} onDelete={remove} />
               ))}
