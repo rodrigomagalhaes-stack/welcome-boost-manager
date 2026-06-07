@@ -78,6 +78,17 @@ const IconClose = () => (
     <line x1="18" y1="6" x2="6" y2="18" /><line x1="6" y1="6" x2="18" y2="18" />
   </svg>
 );
+const IconHistory = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M3 12a9 9 0 1 0 3-6.7L3 8" /><path d="M3 4v4h4" /><path d="M12 8v4l3 3" />
+  </svg>
+);
+const IconSave = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2Z" />
+    <path d="M17 21v-8H7v8M7 3v5h8" />
+  </svg>
+);
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
 const S = {
@@ -266,6 +277,22 @@ const S = {
   table: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
   th: { padding: "10px 16px", textAlign: "left", color: "#444", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, borderBottom: "1px solid rgba(255,255,255,0.04)" },
   td: { padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)", color: "#bbb" },
+  btnSecondary: {
+    display: "flex", alignItems: "center", gap: 8,
+    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
+    color: "#ccc", borderRadius: 10, padding: "10px 20px", fontSize: 14,
+    fontWeight: 600, cursor: "pointer", letterSpacing: -0.2,
+    fontFamily: "'DM Sans', sans-serif",
+  },
+  btnSaveReport: {
+    display: "flex", alignItems: "center", gap: 8,
+    background: "linear-gradient(135deg, #FF3A00, #FF6A00)",
+    color: "#fff", border: "none", borderRadius: 10,
+    padding: "10px 20px", fontSize: 13, fontWeight: 600,
+    cursor: "pointer", letterSpacing: -0.2, marginBottom: 20,
+    boxShadow: "0 4px 20px rgba(255,58,0,0.3)",
+    fontFamily: "'DM Sans', sans-serif",
+  },
 };
 
 // ─── FORM MODAL ──────────────────────────────────────────────────────────────
@@ -350,9 +377,11 @@ function FormModal({ onClose, onSave, loading }) {
 }
 
 // ─── RELATÓRIO ───────────────────────────────────────────────────────────────
-function ReportPage({ boost, onBack }) {
+function ReportPage({ boost, onBack, onSaveReport }) {
   const [rows, setRows] = useState(null);
   const [dragging, setDragging] = useState(false);
+  const [savingReport, setSavingReport] = useState(false);
+  const [savedReport, setSavedReport] = useState(false);
 
   const processFile = (file) => {
     const reader = new FileReader();
@@ -396,6 +425,28 @@ function ReportPage({ boost, onBack }) {
         return { totalStake, ggr, qtdApostas, idsUnicos: ids.size, ticketMedio, wins, lost, cashout, valid };
       })()
     : null;
+
+  const saveReport = async () => {
+    if (!stats) return;
+    setSavingReport(true);
+    try {
+      await onSaveReport({
+        boost_id: boost.id,
+        total_stake: stats.totalStake,
+        ggr: stats.ggr,
+        ids_unicos: stats.idsUnicos,
+        ticket_medio: stats.ticketMedio,
+        qtd_apostas: stats.qtdApostas,
+        wins: stats.wins,
+        lost: stats.lost,
+        cashout: stats.cashout,
+      });
+      setSavedReport(true);
+    } catch (e) {
+      alert("Erro ao salvar relatório: " + e.message);
+    }
+    setSavingReport(false);
+  };
 
   const statusColor = (s) => {
     const sl = (s || "").toLowerCase();
@@ -456,6 +507,14 @@ function ReportPage({ boost, onBack }) {
               ))}
             </div>
 
+            <button
+              style={{ ...S.btnSaveReport, opacity: savingReport ? 0.6 : 1 }}
+              onClick={saveReport}
+              disabled={savingReport || savedReport}
+            >
+              <IconSave /> {savedReport ? "Relatório Salvo ✓" : savingReport ? "Salvando..." : "Salvar Relatório"}
+            </button>
+
             <div style={S.tableWrap}>
               <div style={S.tableHeader}>Apostas ({stats.valid.length})</div>
               <div style={{ overflowX: "auto" }}>
@@ -493,11 +552,88 @@ function ReportPage({ boost, onBack }) {
 
             <button
               style={{ ...S.btnReport, marginTop: 20, width: "auto", padding: "10px 20px" }}
-              onClick={() => { setRows(null); }}
+              onClick={() => { setRows(null); setSavedReport(false); }}
             >
               Carregar outro arquivo
             </button>
           </>
+        )}
+      </div>
+    </div>
+  );
+}
+
+// ─── HISTÓRICO DE RELATÓRIOS ─────────────────────────────────────────────────
+function HistoryPage({ onBack }) {
+  const [reports, setReports] = useState(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const data = await api(
+          "GET",
+          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento)&order=created_at.desc"
+        );
+        if (!cancelled) setReports(data || []);
+      } catch (e) {
+        console.error(e);
+        if (!cancelled) setReports([]);
+      }
+    })();
+    return () => { cancelled = true; };
+  }, []);
+
+  return (
+    <div style={S.reportPage}>
+      <div style={S.reportHeader}>
+        <button style={S.btnBack} onClick={onBack}>
+          <IconArrow left /> Voltar
+        </button>
+        <div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>Histórico de Relatórios</div>
+          <div style={{ fontSize: 11, color: "#444" }}>Relatórios salvos das Welcome Boosts</div>
+        </div>
+      </div>
+
+      <div style={S.reportContent}>
+        <div style={S.reportTitle}>Histórico de Relatórios</div>
+        <div style={S.reportSub}>Relatórios de resultado salvos no Supabase</div>
+
+        {reports === null ? (
+          <div style={{ textAlign: "center", padding: 80, color: "#333", fontSize: 14 }}>Carregando...</div>
+        ) : reports.length === 0 ? (
+          <div style={S.empty}>
+            <div style={S.emptyTitle}>Nenhum relatório salvo</div>
+            <div style={{ fontSize: 13, color: "#333" }}>Salve um relatório a partir da tela de uma Welcome Boost</div>
+          </div>
+        ) : (
+          <div style={S.tableWrap}>
+            <div style={S.tableHeader}>Relatórios ({reports.length})</div>
+            <div style={{ overflowX: "auto" }}>
+              <table style={S.table}>
+                <thead>
+                  <tr>
+                    {["Confronto", "Data do Evento", "GGR", "Total Stakes", "IDs Únicos", "Salvo em"].map((h) => (
+                      <th key={h} style={S.th}>{h}</th>
+                    ))}
+                  </tr>
+                </thead>
+                <tbody>
+                  {reports.map((r) => (
+                    <tr key={r.id}>
+                      <td style={{ ...S.td, color: "#fff", fontWeight: 600 }}>{r.welcome_boosts?.confronto || "-"}</td>
+                      <td style={S.td}>{r.welcome_boosts?.data_evento ? fmtDate(r.welcome_boosts.data_evento) : "-"}</td>
+                      <td style={{ ...S.td, color: r.ggr >= 0 ? "#00E5A0" : "#FF5A20", fontWeight: 600 }}>{fmt(r.ggr)}</td>
+                      <td style={S.td}>{fmt(r.total_stake)}</td>
+                      <td style={S.td}>{r.ids_unicos}</td>
+                      <td style={{ ...S.td, color: "#555" }}>{fmtDate(r.created_at)}</td>
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          </div>
         )}
       </div>
     </div>
@@ -569,6 +705,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [reportBoost, setReportBoost] = useState(null);
+  const [showHistory, setShowHistory] = useState(false);
   const [tab, setTab] = useState("todos");
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
@@ -598,6 +735,10 @@ export default function App() {
     setSaving(false);
   };
 
+  const saveReport = async (report) => {
+    await api("POST", "boost_relatorios", report);
+  };
+
   const remove = async (id) => {
     if (!confirm("Excluir este boost?")) return;
     await api("DELETE", `welcome_boosts?id=eq.${id}`);
@@ -620,7 +761,11 @@ export default function App() {
   };
 
   if (reportBoost) {
-    return <ReportPage boost={reportBoost} onBack={() => setReportBoost(null)} />;
+    return <ReportPage boost={reportBoost} onBack={() => setReportBoost(null)} onSaveReport={saveReport} />;
+  }
+
+  if (showHistory) {
+    return <HistoryPage onBack={() => setShowHistory(false)} />;
   }
 
   return (
@@ -638,9 +783,14 @@ export default function App() {
                 <div style={S.logoSub}>Esportivabet · Manager</div>
               </div>
             </div>
-            <button style={S.btnPrimary} onClick={() => setShowForm(true)}>
-              <IconPlus /> Nova Boost
-            </button>
+            <div style={{ display: "flex", gap: 12 }}>
+              <button style={S.btnSecondary} onClick={() => setShowHistory(true)}>
+                <IconHistory /> Histórico de Relatórios
+              </button>
+              <button style={S.btnPrimary} onClick={() => setShowForm(true)}>
+                <IconPlus /> Nova Boost
+              </button>
+            </div>
           </div>
 
           <div style={S.tabs}>
