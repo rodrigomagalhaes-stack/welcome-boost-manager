@@ -4,7 +4,7 @@ import * as XLSX from "xlsx";
 const SUPABASE_URL = "https://lfuhmhubafgjqzuueyzw.supabase.co";
 const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6ImxmdWhtaHViYWZnanF6dXVleXp3Iiwicm9sZSI6ImFub24iLCJpYXQiOjE3ODA4MjE2NjQsImV4cCI6MjA5NjM5NzY2NH0.99TD4fo6FiOWE61onuY6UHpBurZC6qUZEE55ZrATJ8U";
 
-const api = async (method, path, body) => {
+const api = async (method, path, body, extraHeaders = {}) => {
   const res = await fetch(`${SUPABASE_URL}/rest/v1/${path}`, {
     method,
     headers: {
@@ -12,6 +12,7 @@ const api = async (method, path, body) => {
       Authorization: `Bearer ${SUPABASE_KEY}`,
       "Content-Type": "application/json",
       Prefer: method === "POST" ? "return=representation" : "",
+      ...extraHeaders,
     },
     body: body ? JSON.stringify(body) : undefined,
   });
@@ -903,137 +904,331 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   );
 }
 
-// ─── IDS REPETIDOS ───────────────────────────────────────────────────────────
-// Cruza os IDs de jogadores guardados em cada relatório salvo e aponta quais
-// IDs aparecem em mais de um relatório (possível indício de reaproveitamento
-// da mesma conta em diferentes Welcome Boosts).
+// ─── IDS REPETIDOS — DASHBOARD ───────────────────────────────────────────────
+// Cruza os IDs de jogadores entre relatórios salvos.
+// O resultado é guardado em app_settings (checkpoint) para evitar reprocessar
+// tudo a cada abertura — só roda novamente quando há relatórios novos.
 function RepeatedIdsPage({ onBack }) {
-  const [reports, setReports] = useState(null);
+  // "loading" | "computing" | "stale" | "no_data" | "ready" | "error"
+  const [phase, setPhase] = useState("loading");
+  const [ck, setCk] = useState(null);          // checkpoint salvo
+  const [newCount, setNewCount] = useState(0); // relatórios novos desde o ck
+  const [detailLimit, setDetailLimit] = useState(100);
 
-  useEffect(() => {
-    let cancelled = false;
-    (async () => {
-      try {
-        const data = await api(
+  // ── 1. Carrega checkpoint e verifica se há relatórios novos ──────────────
+  const loadCheckpoint = useCallback(async () => {
+    setPhase("loading");
+    try {
+      const rows = await api("GET", "app_settings?key=eq.ids_checkpoint&select=value");
+      const cached = rows?.[0]?.value ?? null;
+      const lastAt = cached?.last_report_created_at ?? "1970-01-01T00:00:00Z";
+
+      const newer = await api(
+        "GET",
+        `boost_relatorios?select=id&player_ids=not.is.null&created_at=gt.${encodeURIComponent(lastAt)}`
+      );
+      const delta = (newer || []).length;
+
+      if (cached && delta === 0) {
+        setCk(cached);
+        setNewCount(0);
+        setPhase("ready");
+      } else if (cached && delta > 0) {
+        setCk(cached);
+        setNewCount(delta);
+        setPhase("stale");
+      } else {
+        // Sem checkpoint ainda — verifica se já existem dados para processar
+        const sample = await api(
           "GET",
-          "boost_relatorios?select=id,boost_id,player_ids,created_at,welcome_boosts(confronto,data_evento)&order=created_at.desc"
+          "boost_relatorios?select=id&player_ids=not.is.null&limit=1"
         );
-        if (!cancelled) setReports(data || []);
-      } catch (e) {
-        console.error(e);
-        if (!cancelled) setReports([]);
+        setPhase(sample?.length ? "no_data" : "no_data");
+        setNewCount(delta);
       }
-    })();
-    return () => { cancelled = true; };
+    } catch (e) {
+      console.error(e);
+      setPhase("error");
+    }
   }, []);
 
-  const hasIdData = reports ? reports.some((r) => Array.isArray(r.player_ids) && r.player_ids.length > 0) : false;
+  useEffect(() => { loadCheckpoint(); }, [loadCheckpoint]);
 
-  // Agrupa ocorrências por ID de jogador e filtra os que aparecem em mais de um relatório
-  const repeated = useMemo(() => {
-    if (!reports) return null;
-    const byId = new Map();
-    for (const r of reports) {
-      const ids = Array.isArray(r.player_ids) ? r.player_ids : [];
-      for (const pid of ids) {
-        if (pid === undefined || pid === null || pid === "") continue;
-        if (!byId.has(pid)) byId.set(pid, []);
-        byId.get(pid).push({
-          reportId: r.id,
-          confronto: r.welcome_boosts?.confronto || "-",
-          data_evento: r.welcome_boosts?.data_evento,
-          created_at: r.created_at,
+  // ── 2. Processa todos os relatórios e salva o checkpoint ─────────────────
+  const runAnalysis = useCallback(async () => {
+    setPhase("computing");
+    try {
+      const reports = await api(
+        "GET",
+        "boost_relatorios?select=id,player_ids,created_at,welcome_boosts(confronto,data_evento)&player_ids=not.is.null&order=created_at.asc"
+      );
+
+      if (!reports || reports.length === 0) {
+        setPhase("no_data");
+        return;
+      }
+
+      // crossRef: player_id → Set de confronto strings
+      const crossRef = new Map();
+      // confrontoMap: confronto → { totalIds: Set, sharedIds: Set, data_evento }
+      const confrontoMap = new Map();
+      let lastCreatedAt = "";
+
+      for (const r of reports) {
+        const confronto = r.welcome_boosts?.confronto || "Sem nome";
+        const ids = Array.isArray(r.player_ids) ? r.player_ids : [];
+        if (!confrontoMap.has(confronto)) {
+          confrontoMap.set(confronto, {
+            totalIds: new Set(),
+            sharedIds: new Set(),
+            data_evento: r.welcome_boosts?.data_evento ?? null,
+          });
+        }
+        const cMeta = confrontoMap.get(confronto);
+        for (const pid of ids) {
+          if (!pid) continue;
+          cMeta.totalIds.add(pid);
+          if (!crossRef.has(pid)) crossRef.set(pid, new Set());
+          crossRef.get(pid).add(confronto);
+        }
+        if (r.created_at > lastCreatedAt) lastCreatedAt = r.created_at;
+      }
+
+      // Marca shared por confronto
+      for (const [pid, confrontos] of crossRef.entries()) {
+        if (confrontos.size > 1) {
+          for (const c of confrontos) confrontoMap.get(c)?.sharedIds.add(pid);
+        }
+      }
+
+      // Lista de IDs repetidos
+      const repeated = [];
+      for (const [pid, confrontos] of crossRef.entries()) {
+        if (confrontos.size > 1) repeated.push({ id: pid, count: confrontos.size, confrontos: [...confrontos] });
+      }
+      repeated.sort((a, b) => b.count - a.count);
+
+      // Stats por confronto
+      const confrontoStats = [];
+      for (const [confronto, meta] of confrontoMap.entries()) {
+        confrontoStats.push({
+          confronto,
+          total_ids: meta.totalIds.size,
+          shared_ids: meta.sharedIds.size,
+          data_evento: meta.data_evento,
         });
       }
-    }
-    const result = [];
-    for (const [pid, occurrences] of byId.entries()) {
-      if (occurrences.length > 1) result.push({ id: pid, occurrences });
-    }
-    result.sort((a, b) => b.occurrences.length - a.occurrences.length);
-    return result;
-  }, [reports]);
+      confrontoStats.sort((a, b) => b.shared_ids - a.shared_ids);
 
+      const newCk = {
+        computed_at: new Date().toISOString(),
+        last_report_created_at: lastCreatedAt,
+        total_reports_processed: reports.length,
+        total_unique_ids: crossRef.size,
+        total_repeated_ids: repeated.length,
+        repeated: repeated.slice(0, 10000),
+        confronto_stats: confrontoStats,
+      };
+
+      // Upsert no banco
+      await api(
+        "POST",
+        "app_settings",
+        { key: "ids_checkpoint", value: newCk, updated_at: new Date().toISOString() },
+        { Prefer: "resolution=merge-duplicates,return=representation" }
+      );
+
+      setCk(newCk);
+      setNewCount(0);
+      setDetailLimit(100);
+      setPhase("ready");
+    } catch (e) {
+      console.error(e);
+      setPhase("error");
+    }
+  }, []);
+
+  // ── Download CSV dos IDs repetidos ───────────────────────────────────────
   const downloadRepeated = () => {
-    if (!repeated || repeated.length === 0) return;
-    const lines = ["ID;Quantidade de relatorios;Confrontos"];
-    for (const item of repeated) {
-      const confrontos = item.occurrences.map((o) => o.confronto).join(" | ");
-      lines.push(`${item.id};${item.occurrences.length};"${confrontos}"`);
+    if (!ck?.repeated?.length) return;
+    const lines = ["ID;Aparece em (qtd);Confrontos"];
+    for (const item of ck.repeated) {
+      lines.push(`${item.id};${item.count};"${item.confrontos.join(" | ")}"`);
     }
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const a = document.createElement("a");
-    a.href = url;
-    a.download = "ids_repetidos.csv";
-    a.click();
+    a.href = url; a.download = "ids_repetidos.csv"; a.click();
     URL.revokeObjectURL(url);
   };
 
+  // ── Helpers de formatação ────────────────────────────────────────────────
+  const pct = (n, total) => total > 0 ? ((n / total) * 100).toFixed(1) + "%" : "—";
+  const topConfronto = ck?.confronto_stats?.[0]?.confronto ?? "—";
+
+  // ── Render ───────────────────────────────────────────────────────────────
   return (
     <div style={S.reportPage}>
       <div style={S.reportHeader} className="report-header">
-        <button style={S.btnBack} onClick={onBack}>
-          <IconArrow left /> Voltar
-        </button>
+        <button style={S.btnBack} onClick={onBack}><IconArrow left /> Voltar</button>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700 }}>IDs Repetidos</div>
-          <div style={{ fontSize: 11, color: "var(--t3)" }}>Jogadores que aparecem em mais de um relatório salvo</div>
+          <div style={{ fontSize: 11, color: "var(--t3)" }}>Cruzamento de jogadores entre Welcome Boosts</div>
         </div>
       </div>
 
       <div style={S.reportContent} className="report-content">
-        <div style={S.reportTitle} className="report-title">IDs Repetidos</div>
-        <div style={S.reportSub}>Cruzamento dos IDs de jogadores entre todos os relatórios salvos no Supabase</div>
 
-        {reports === null ? (
-          <div style={{ textAlign: "center", padding: 80, color: "var(--t3)", fontSize: 14 }}>Carregando...</div>
-        ) : !hasIdData ? (
+        {/* ── Barra de status / controle ── */}
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 24, padding: "14px 18px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r-md)" }}>
+          <div style={{ fontSize: 12.5, color: "var(--t2)" }}>
+            {phase === "loading" && "Verificando checkpoint..."}
+            {phase === "computing" && <span style={{ color: "var(--info)", fontWeight: 600 }}>⏳ Processando relatórios…</span>}
+            {phase === "no_data" && "Nenhum relatório com IDs encontrado. Gere e salve novos relatórios."}
+            {phase === "error" && <span style={{ color: "var(--down)" }}>Erro ao carregar. Tente novamente.</span>}
+            {(phase === "ready" || phase === "stale") && ck && (
+              <span>
+                Última análise: <strong>{fmtDate(ck.computed_at)}</strong>
+                {" · "}{ck.total_reports_processed} relatório{ck.total_reports_processed !== 1 ? "s" : ""} processado{ck.total_reports_processed !== 1 ? "s" : ""}
+                {phase === "stale" && <span style={{ marginLeft: 10, color: "var(--warn)", fontWeight: 600 }}>· {newCount} novo{newCount !== 1 ? "s" : ""} desde então</span>}
+              </span>
+            )}
+          </div>
+          <div style={{ display: "flex", gap: 8 }}>
+            {(phase === "ready" || phase === "stale" || phase === "no_data") && (
+              <button
+                style={{ ...S.btnSecondary, padding: "8px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 7 }}
+                onClick={runAnalysis}
+                disabled={phase === "computing"}
+              >
+                <IconChart /> {phase === "stale" ? `Atualizar (${newCount} novo${newCount !== 1 ? "s" : ""})` : "Rodar análise"}
+              </button>
+            )}
+            {phase === "ready" && ck?.repeated?.length > 0 && (
+              <button
+                style={{ ...S.btnSecondary, padding: "8px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 7 }}
+                onClick={downloadRepeated}
+              >
+                <IconDownload /> Baixar CSV
+              </button>
+            )}
+          </div>
+        </div>
+
+        {/* ── KPI cards ── */}
+        {(phase === "ready" || phase === "stale") && ck && (
+          <>
+            <div style={{ ...S.statsGrid, marginBottom: 28 }} className="stats-grid">
+              {[
+                { label: "IDs Únicos processados",  value: ck.total_unique_ids.toLocaleString("pt-BR"),  color: "var(--info)",  sub: `em ${ck.total_reports_processed} relatórios` },
+                { label: "IDs Repetidos",            value: ck.total_repeated_ids.toLocaleString("pt-BR"), color: "var(--down)",  sub: "aparecem em 2+ confrontos" },
+                { label: "Taxa de repetição",        value: pct(ck.total_repeated_ids, ck.total_unique_ids), color: "var(--warn)",  sub: "do total de IDs únicos" },
+                { label: "Confronto mais repetido",  value: topConfronto, color: "var(--t1)", sub: `${ck.confronto_stats?.[0]?.shared_ids ?? 0} IDs compartilhados` },
+              ].map((s) => (
+                <div key={s.label} style={S.statCard}>
+                  <div style={S.statCardTop}>
+                    <div style={S.statLabel}>{s.label}</div>
+                    <div style={S.statIconWrap(s.color)}><IconUser /></div>
+                  </div>
+                  <div style={{ ...S.statValue, color: s.color, fontSize: s.label === "Confronto mais repetido" ? 14 : 22 }}>{s.value}</div>
+                  <div style={S.statSub}>{s.sub}</div>
+                </div>
+              ))}
+            </div>
+
+            {/* ── Comparativo por confronto ── */}
+            {ck.confronto_stats?.length > 0 && (
+              <div style={{ ...S.tableWrap, marginBottom: 28 }} className="table-wrap">
+                <div style={S.tableHeader}>Comparativo por confronto</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={S.table}>
+                    <thead>
+                      <tr>
+                        {["Confronto", "Total de IDs", "IDs em outros confrontos", "% compartilhado"].map((h) => (
+                          <th key={h} style={S.th}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ck.confronto_stats.map((row) => (
+                        <tr key={row.confronto}>
+                          <td style={{ ...S.td, fontWeight: 600, color: "var(--t1)" }}>{row.confronto}</td>
+                          <td style={{ ...S.td, fontFamily: "var(--mono)" }}>{row.total_ids.toLocaleString("pt-BR")}</td>
+                          <td style={{ ...S.td, fontFamily: "var(--mono)", color: row.shared_ids > 0 ? "var(--down)" : "var(--t3)", fontWeight: row.shared_ids > 0 ? 700 : 400 }}>
+                            {row.shared_ids.toLocaleString("pt-BR")}
+                          </td>
+                          <td style={{ ...S.td, fontFamily: "var(--mono)", color: row.shared_ids > 0 ? "var(--warn)" : "var(--t3)" }}>
+                            {pct(row.shared_ids, row.total_ids)}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            )}
+
+            {/* ── Detalhe dos IDs repetidos ── */}
+            {ck.repeated?.length > 0 ? (
+              <div style={S.tableWrap} className="table-wrap">
+                <div style={S.tableHeader}>IDs repetidos — detalhe ({ck.repeated.length})</div>
+                <div style={{ overflowX: "auto" }}>
+                  <table style={S.table}>
+                    <thead>
+                      <tr>
+                        {["ID do Jogador (Player)", "Aparece em", "Confrontos"].map((h) => (
+                          <th key={h} style={S.th}>{h}</th>
+                        ))}
+                      </tr>
+                    </thead>
+                    <tbody>
+                      {ck.repeated.slice(0, detailLimit).map((item) => (
+                        <tr key={item.id}>
+                          <td style={{ ...S.td, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--t1)" }}>{item.id}</td>
+                          <td style={{ ...S.td, color: "var(--down)", fontWeight: 600, fontFamily: "var(--mono)" }}>{item.count}×</td>
+                          <td style={{ ...S.td, color: "var(--t2)" }}>
+                            {item.confrontos.map((c, i) => (
+                              <span key={i} style={{ display: "inline-block", marginRight: 8 }}>
+                                {c}{i < item.confrontos.length - 1 ? " ·" : ""}
+                              </span>
+                            ))}
+                          </td>
+                        </tr>
+                      ))}
+                    </tbody>
+                  </table>
+                </div>
+                {ck.repeated.length > detailLimit && (
+                  <div style={{ padding: "14px 20px", textAlign: "center", borderTop: "1px solid var(--line)" }}>
+                    <button
+                      style={{ ...S.btnSecondary, padding: "8px 18px", fontSize: 12 }}
+                      onClick={() => setDetailLimit((n) => n + 100)}
+                    >
+                      Carregar mais ({ck.repeated.length - detailLimit} restantes)
+                    </button>
+                  </div>
+                )}
+              </div>
+            ) : (
+              <div style={S.empty}>
+                <div style={S.emptyTitle}>Nenhum ID repetido encontrado</div>
+                <div style={{ fontSize: 13, color: "var(--t3)" }}>Nenhum jogador aparece em mais de um relatório salvo até o momento</div>
+              </div>
+            )}
+          </>
+        )}
+
+        {(phase === "loading" || phase === "computing") && (
+          <div style={{ textAlign: "center", padding: 80, color: "var(--t3)", fontSize: 14 }}>
+            {phase === "computing" ? "Processando todos os relatórios, aguarde…" : "Carregando…"}
+          </div>
+        )}
+
+        {phase === "no_data" && (
           <div style={S.empty}>
             <div style={S.emptyTitle}>Nenhum dado de IDs disponível ainda</div>
             <div style={{ fontSize: 13, color: "var(--t3)", maxWidth: 460, margin: "0 auto" }}>
-              Relatórios salvos antes desta atualização não guardam a lista de IDs processados.
-              Gere e salve novos relatórios a partir de agora para que eles entrem nesse cruzamento.
-            </div>
-          </div>
-        ) : repeated === null || repeated.length === 0 ? (
-          <div style={S.empty}>
-            <div style={S.emptyTitle}>Nenhum ID repetido encontrado</div>
-            <div style={{ fontSize: 13, color: "var(--t3)" }}>Nenhum jogador aparece em mais de um relatório salvo até o momento</div>
-          </div>
-        ) : (
-          <div style={S.tableWrap} className="table-wrap">
-            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, padding: "16px 20px", borderBottom: "1px solid var(--line)" }}>
-              <div style={S.tableHeader}>IDs repetidos ({repeated.length})</div>
-              <button style={{ ...S.btnSecondary, padding: "8px 16px", fontSize: 12 }} onClick={downloadRepeated}>
-                <IconDownload /> Baixar lista (CSV)
-              </button>
-            </div>
-            <div style={{ overflowX: "auto" }}>
-              <table style={S.table}>
-                <thead>
-                  <tr>
-                    {["ID do Jogador", "Aparece em", "Relatórios (Confronto)"].map((h) => (
-                      <th key={h} style={S.th}>{h}</th>
-                    ))}
-                  </tr>
-                </thead>
-                <tbody>
-                  {repeated.map((item) => (
-                    <tr key={item.id}>
-                      <td style={{ ...S.td, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--t1)" }}>{item.id}</td>
-                      <td style={S.td}>{item.occurrences.length} relatórios</td>
-                      <td style={{ ...S.td, color: "var(--t2)" }}>
-                        {item.occurrences.map((o, i) => (
-                          <span key={i} style={{ display: "inline-block", marginRight: 10 }}>
-                            {o.confronto}{i < item.occurrences.length - 1 ? " ·" : ""}
-                          </span>
-                        ))}
-                      </td>
-                    </tr>
-                  ))}
-                </tbody>
-              </table>
+              Gere e salve novos relatórios (com arquivos xlsx) para que os IDs comecem a ser registrados e cruzados aqui.
             </div>
           </div>
         )}
