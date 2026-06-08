@@ -31,14 +31,14 @@ const computeStatus = (boost) => {
 };
 
 const statusConfig = {
-  ativo: { label: "Ativo", color: "#00E5A0", bg: "rgba(0,229,160,0.12)" },
-  encerrado: { label: "Encerrado", color: "#888", bg: "rgba(136,136,136,0.1)" },
+  ativo: { label: "Ativo", color: "var(--up)", bg: "var(--up-soft)" },
+  encerrado: { label: "Encerrado", color: "var(--t3)", bg: "var(--surface-2)" },
 };
 
 const fmt = (n) =>
   new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(n);
 
-const AVATAR_COLORS = ["#FF5A20", "#00E5A0", "#A78BFA", "#FF9500", "#3B9EFF", "#FF3B6B", "#22C55E", "#F472B6"];
+const AVATAR_COLORS = ["#e8540f", "#11874c", "#4a52c9", "#b8770a", "#2f6f9e", "#a8456b", "#3a8a55", "#a85f8e"];
 
 const splitConfronto = (confronto) => {
   const parts = (confronto || "").split(/\s+vs\.?\s+/i);
@@ -59,6 +59,20 @@ const fmtDate = (d) =>
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+
+// Gera e baixa um .csv com a lista de IDs de jogadores processados em um relatório
+const downloadIds = (ids, boost) => {
+  if (!ids || !ids.length) return;
+  const lines = ["ID do Jogador", ...ids.map((id) => String(id))];
+  const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement("a");
+  a.href = url;
+  const slug = (boost?.id_jogo || boost?.confronto || "relatorio").toString().replace(/[^a-zA-Z0-9_-]+/g, "_");
+  a.download = `ids_processados_${slug}.csv`;
+  a.click();
+  URL.revokeObjectURL(url);
+};
 
 // ─── ICONS ───────────────────────────────────────────────────────────────────
 const IconPlus = () => (
@@ -127,252 +141,331 @@ const IconSave = () => (
     <path d="M17 21v-8H7v8M7 3v5h8" />
   </svg>
 );
+const IconChevronRight = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="9 6 15 12 9 18" />
+  </svg>
+);
+const IconTrophy = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M8 21h8M12 17v4M7 4h10v4a5 5 0 0 1-10 0V4Z" />
+    <path d="M7 5H4a1 1 0 0 0-1 1 5 5 0 0 0 4 4.9M17 5h3a1 1 0 0 1 1 1 5 5 0 0 1-4 4.9" />
+  </svg>
+);
+const IconCashout = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <polyline points="17 1 21 5 17 9" /><path d="M3 11V9a4 4 0 0 1 4-4h14" />
+    <polyline points="7 23 3 19 7 15" /><path d="M21 13v2a4 4 0 0 1-4 4H3" />
+  </svg>
+);
+const IconTicket = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M2 9a3 3 0 0 1 0 6v2a2 2 0 0 0 2 2h16a2 2 0 0 0 2-2v-2a3 3 0 0 1 0-6V7a2 2 0 0 0-2-2H4a2 2 0 0 0-2 2Z" />
+    <line x1="13" y1="5" x2="13" y2="19" strokeDasharray="2 2" />
+  </svg>
+);
+const IconCoin = () => (
+  <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <circle cx="12" cy="12" r="9" /><path d="M14.8 9a2.7 2.7 0 0 0-2.3-1c-1.5 0-2.5.8-2.5 2s1 1.7 2.5 2 2.5.8 2.5 2-1 2-2.5 2a2.7 2.7 0 0 1-2.3-1M12 6.5v11" />
+  </svg>
+);
+const IconDownload = () => (
+  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4" />
+    <polyline points="7 10 12 15 17 10" /><line x1="12" y1="15" x2="12" y2="3" />
+  </svg>
+);
 
 // ─── STYLES ──────────────────────────────────────────────────────────────────
+const v = (name) => `var(--${name})`;
 const S = {
   app: {
     minHeight: "100vh",
-    background: "#0A0A0F",
-    color: "#E8E8EE",
-    fontFamily: "'DM Sans', sans-serif",
+    background: v("bg"),
+    color: v("t1"),
+    fontFamily: "var(--font)",
     position: "relative",
   },
-  noise: {
-    position: "fixed", inset: 0, pointerEvents: "none", zIndex: 0,
-    backgroundImage: `url("data:image/svg+xml,%3Csvg viewBox='0 0 256 256' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.9' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23noise)' opacity='0.035'/%3E%3C/svg%3E")`,
-    opacity: 0.4,
+  main: { position: "relative", zIndex: 1, maxWidth: 1240, margin: "0 auto", padding: "0 30px 60px" },
+  // shell com sidebar (inspirado no layout do shadcn-admin)
+  shell: { display: "flex", alignItems: "flex-start", minHeight: "100vh" },
+  sidebar: {
+    width: 240, flexShrink: 0, background: v("surface"), borderRight: `1px solid ${v("line")}`,
+    padding: "22px 14px", display: "flex", flexDirection: "column", gap: 2,
+    position: "sticky", top: 0, height: "100vh", boxSizing: "border-box",
   },
-  glow: {
-    position: "fixed", top: -200, left: "50%", transform: "translateX(-50%)",
-    width: 800, height: 400, borderRadius: "50%", pointerEvents: "none", zIndex: 0,
-    background: "radial-gradient(ellipse, rgba(255,58,0,0.08) 0%, transparent 70%)",
+  sidebarLogo: { display: "flex", alignItems: "center", gap: 11, padding: "4px 10px", marginBottom: 22 },
+  sidebarNavLabel: {
+    fontFamily: "var(--mono)", fontSize: 9.5, color: v("t3"), textTransform: "uppercase",
+    letterSpacing: "0.12em", padding: "16px 12px 7px", fontWeight: 500,
   },
-  main: { position: "relative", zIndex: 1, maxWidth: 1100, margin: "0 auto", padding: "0 24px 60px" },
+  sidebarNavItem: (active) => ({
+    display: "flex", alignItems: "center", gap: 11, padding: "9px 12px", borderRadius: "var(--r-sm)",
+    fontSize: 13.5, fontWeight: active ? 700 : 500,
+    color: active ? v("acc") : v("t2"),
+    background: active ? v("acc-soft") : "transparent",
+    border: `1px solid ${active ? v("acc-line") : "transparent"}`,
+    cursor: "pointer", transition: "background .12s, border-color .12s, color .12s",
+    width: "100%", textAlign: "left", fontFamily: "var(--font)",
+  }),
+  contentArea: { flex: 1, minWidth: 0, padding: "30px 36px 60px" },
+  pageTitle: { fontSize: 20, fontWeight: 800, letterSpacing: -0.4, color: v("t1"), marginBottom: 2 },
+  pageSub: { fontFamily: "var(--mono)", fontSize: 11.5, color: v("t3"), marginBottom: 24 },
   header: {
     display: "flex", alignItems: "center", justifyContent: "space-between",
-    padding: "32px 0 40px", borderBottom: "1px solid rgba(255,255,255,0.06)",
-    marginBottom: 36,
+    padding: "26px 0", borderBottom: `1px solid ${v("line")}`,
+    marginBottom: 28, position: "sticky", top: 0, background: v("bg"), zIndex: 5,
   },
-  logo: {
-    display: "flex", alignItems: "center", gap: 12,
-  },
+  logo: { display: "flex", alignItems: "center", gap: 12 },
   logoMark: {
     width: 38, height: 38, borderRadius: 10,
-    background: "linear-gradient(135deg, #FF3A00, #FF7A00)",
+    background: "#ffffff", border: `1px solid ${v("line-2")}`,
     display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 18, fontWeight: 900, color: "#fff", letterSpacing: -1,
+    fontFamily: "var(--mono)", fontSize: 16, fontWeight: 800, color: v("t1"), letterSpacing: -0.5,
+    boxShadow: "0 1px 2px rgba(27,24,20,0.12), inset 0 1px 0 rgba(255,255,255,0.6)",
   },
-  logoText: { fontSize: 20, fontWeight: 700, letterSpacing: -0.5, color: "#fff" },
-  logoSub: { fontSize: 11, color: "#555", letterSpacing: 1, textTransform: "uppercase" },
+  logoText: { fontSize: 18, fontWeight: 800, letterSpacing: -0.4, color: v("t1") },
+  logoSub: { fontFamily: "var(--mono)", fontSize: 10.5, color: v("t3"), letterSpacing: "0.12em", textTransform: "uppercase" },
   btnPrimary: {
     display: "flex", alignItems: "center", gap: 8,
-    background: "linear-gradient(135deg, #FF3A00, #FF6A00)",
-    color: "#fff", border: "none", borderRadius: 10,
-    padding: "10px 20px", fontSize: 14, fontWeight: 600,
-    cursor: "pointer", letterSpacing: -0.2, transition: "all 0.2s",
-    boxShadow: "0 4px 20px rgba(255,58,0,0.3)",
+    background: "#ffffff", border: `1px solid ${v("line-2")}`,
+    color: v("t1"), borderRadius: "var(--r-sm)",
+    padding: "10px 17px", fontSize: 14.5, fontWeight: 600,
+    cursor: "pointer", transition: "background .12s, border-color .12s",
+    boxShadow: "0 1px 2px rgba(27,24,20,0.10), inset 0 1px 0 rgba(255,255,255,0.6)",
+    fontFamily: "var(--font)",
   },
-  tabs: { display: "flex", gap: 4, marginBottom: 32, background: "rgba(255,255,255,0.04)", borderRadius: 12, padding: 4 },
+  tabs: { display: "flex", gap: 6, marginBottom: 28 },
   tab: (active) => ({
-    padding: "8px 20px", borderRadius: 9, border: "none", cursor: "pointer",
-    fontSize: 13, fontWeight: active ? 600 : 400,
-    background: active ? "rgba(255,58,0,0.15)" : "transparent",
-    color: active ? "#FF5A20" : "#666",
-    transition: "all 0.2s", letterSpacing: -0.1,
+    display: "inline-flex", alignItems: "center", gap: 7,
+    padding: "9px 18px", borderRadius: "var(--r-sm)", cursor: "pointer",
+    fontSize: 13.5, fontWeight: active ? 700 : 500,
+    background: active ? v("acc-soft") : "transparent",
+    color: active ? v("acc") : v("t2"),
+    border: `1px solid ${active ? v("acc-line") : "transparent"}`,
+    transition: "all 0.12s", fontFamily: "var(--font)",
   }),
   filterBar: {
-    display: "flex", gap: 12, marginBottom: 28, alignItems: "center", flexWrap: "wrap",
+    display: "flex", gap: 12, marginBottom: 24, alignItems: "center", flexWrap: "wrap",
   },
   input: {
-    background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 10, padding: "9px 14px", color: "#E8E8EE", fontSize: 13,
-    outline: "none", transition: "border 0.2s",
-    fontFamily: "'DM Sans', sans-serif",
+    background: v("surface"), border: `1px solid ${v("line-2")}`,
+    borderRadius: "var(--r-sm)", padding: "10px 14px", color: v("t1"), fontSize: 13.5,
+    outline: "none", transition: "border-color .12s, box-shadow .12s",
+    fontFamily: "var(--font)",
   },
-  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(340px, 1fr))", gap: 16 },
+  grid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(376px, 1fr))", gap: 16 },
   card: {
-    background: "rgba(255,255,255,0.03)", border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 16, padding: 22, position: "relative", overflow: "hidden",
-    transition: "border-color 0.2s, transform 0.2s",
+    background: v("surface"), border: `1px solid ${v("line")}`,
+    borderRadius: "var(--r-lg)", padding: 22, position: "relative", overflow: "hidden",
+    transition: "border-color 0.15s, box-shadow 0.15s",
+    boxShadow: "var(--shadow)",
     cursor: "default",
   },
   cardAccent: (color) => ({
-    position: "absolute", top: 0, left: 0, right: 0, height: 2,
-    background: `linear-gradient(90deg, ${color}, transparent)`,
+    position: "absolute", top: 0, left: 0, right: 0, height: 3,
+    background: color,
   }),
-  cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 18, gap: 14 },
+  cardHeader: { display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 16, gap: 14 },
   matchup: { display: "flex", alignItems: "center", gap: 14, flex: 1, minWidth: 0 },
   avatar: (color) => ({
-    width: 42, height: 42, borderRadius: "50%", flexShrink: 0,
-    background: `${color}1F`, border: `1.5px solid ${color}55`,
+    width: 44, height: 44, borderRadius: 13, flexShrink: 0,
+    background: `${color}1F`, border: `1px solid ${color}40`,
     display: "flex", alignItems: "center", justifyContent: "center",
-    fontSize: 13, fontWeight: 800, color, letterSpacing: -0.3,
+    fontFamily: "var(--mono)", fontSize: 13, fontWeight: 700, color, letterSpacing: 0,
   }),
   matchupCenter: { minWidth: 0 },
   confronto: {
-    fontSize: 16, fontWeight: 700, letterSpacing: -0.4, color: "#fff", lineHeight: 1.3,
+    fontSize: 16, fontWeight: 700, letterSpacing: -0.3, color: v("t1"), lineHeight: 1.3,
     overflowWrap: "anywhere", wordBreak: "break-word",
   },
-  confrontoVs: { color: "#FF5A20" },
-  idJogo: { fontSize: 11, color: "#444", marginTop: 3, fontFamily: "monospace" },
-  metaRow: { display: "flex", flexWrap: "wrap", gap: "12px 26px", marginBottom: 18 },
-  metaRowItem: { display: "flex", alignItems: "center", gap: 8 },
+  confrontoVs: { color: v("acc") },
+  idJogo: { fontFamily: "var(--mono)", fontSize: 11, color: v("t3"), marginTop: 3 },
+  // faixa de destaque (odd antiga -> nova)
+  oddRow: {
+    display: "flex", alignItems: "center", gap: 10, marginBottom: 16,
+    padding: "12px 14px", background: v("surface-2"), borderRadius: "var(--r-md)",
+    border: `1px solid ${v("line")}`,
+  },
+  oddOld: { fontFamily: "var(--mono)", fontSize: 13, color: v("t3"), textDecoration: "line-through" },
+  oddArrow: { fontSize: 13, color: v("acc"), fontWeight: 700 },
+  oddNew: { fontFamily: "var(--mono)", fontSize: 18, fontWeight: 800, color: v("acc"), letterSpacing: "-0.02em" },
+  maxStake: { fontFamily: "var(--mono)", fontSize: 12, marginLeft: "auto", color: v("t2"), fontWeight: 600 },
+  // grade de info 2-col com ícones
+  metaRow: { display: "flex", flexWrap: "wrap", gap: "10px 24px", marginBottom: 16 },
+  metaRowItem: { display: "flex", alignItems: "center", gap: 9 },
   metaRowIconWrap: {
-    width: 24, height: 24, borderRadius: 7, flexShrink: 0,
-    background: "rgba(255,255,255,0.05)", color: "#666",
+    width: 26, height: 26, borderRadius: 8, flexShrink: 0,
+    background: v("surface-2"), color: v("t3"), border: `1px solid ${v("line")}`,
     display: "flex", alignItems: "center", justifyContent: "center",
   },
   metaRowText: { display: "flex", flexDirection: "column", gap: 1 },
-  metaRowLabel: { fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: 0.6 },
-  metaRowValue: { fontSize: 12.5, fontWeight: 600, color: "#ccc" },
+  metaRowLabel: { fontFamily: "var(--mono)", fontSize: 9.5, color: v("t3"), textTransform: "uppercase", letterSpacing: "0.1em" },
+  metaRowValue: { fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: v("t1") },
   marketTag: {
     display: "inline-flex", alignItems: "center", gap: 6,
-    padding: "5px 12px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-    background: "rgba(167,139,250,0.1)", color: "#A78BFA",
-    border: "1px solid rgba(167,139,250,0.25)",
+    padding: "5px 11px", borderRadius: 8, fontSize: 12, fontWeight: 600,
+    background: v("info-soft"), color: v("info"),
+    border: "1px solid transparent",
   },
   badge: (color, bg) => ({
-    padding: "3px 10px", borderRadius: 20, fontSize: 11, fontWeight: 600,
-    color, background: bg, border: `1px solid ${color}33`, whiteSpace: "nowrap",
+    display: "inline-flex", alignItems: "center", gap: 7,
+    padding: "5px 11px", borderRadius: 8, fontSize: 11.5, fontWeight: 700,
+    color, background: bg, letterSpacing: "0.04em", textTransform: "uppercase",
+    whiteSpace: "nowrap",
   }),
-  cardMeta: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 10, marginBottom: 16 },
-  metaItem: { display: "flex", flexDirection: "column", gap: 2 },
-  metaLabel: { fontSize: 10, color: "#444", textTransform: "uppercase", letterSpacing: 0.8 },
-  metaValue: { fontSize: 13, fontWeight: 600, color: "#ccc" },
-  oddRow: {
-    display: "flex", alignItems: "center", gap: 10, marginBottom: 16,
-    padding: "10px 14px", background: "rgba(255,255,255,0.03)", borderRadius: 10,
-  },
-  oddOld: { fontSize: 13, color: "#555", textDecoration: "line-through" },
-  oddArrow: { fontSize: 12, color: "#FF5A20" },
-  oddNew: { fontSize: 16, fontWeight: 800, color: "#00E5A0" },
-  maxStake: { fontSize: 12, marginLeft: "auto", color: "#FF9500", fontWeight: 600 },
   cardActions: { display: "flex", gap: 8, marginTop: 4 },
   btnReport: {
-    flex: 1, display: "flex", alignItems: "center", justifyContent: "center", gap: 6,
-    background: "rgba(255,90,32,0.1)", border: "1px solid rgba(255,90,32,0.2)",
-    color: "#FF5A20", borderRadius: 9, padding: "8px 12px", fontSize: 12,
-    fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-    fontFamily: "'DM Sans', sans-serif",
+    flex: 1, display: "flex", alignItems: "center", justifyContent: "space-between", gap: 7,
+    background: v("surface-2"), border: `1px solid ${v("line")}`,
+    color: v("acc"), borderRadius: "var(--r-sm)", padding: "12px 16px", fontSize: 13.5,
+    fontWeight: 700, cursor: "pointer", transition: "background .12s, border-color .12s",
+    fontFamily: "var(--font)",
   },
+  btnReportLeft: { display: "flex", alignItems: "center", gap: 8 },
+  // bloco "Mercado" em destaque
+  marketBox: {
+    display: "flex", alignItems: "center", gap: 13, marginBottom: 16,
+    padding: "12px 14px", background: v("surface-2"), borderRadius: "var(--r-md)",
+    border: `1px solid ${v("line")}`,
+  },
+  marketBoxIcon: {
+    width: 38, height: 38, borderRadius: 11, flexShrink: 0,
+    background: v("info-soft"), color: v("info"),
+    display: "flex", alignItems: "center", justifyContent: "center",
+  },
+  marketBoxLabel: { fontFamily: "var(--mono)", fontSize: 9.5, color: v("t3"), textTransform: "uppercase", letterSpacing: "0.1em" },
+  marketBoxValue: { fontSize: 15, fontWeight: 700, color: v("t1"), marginTop: 2 },
+  // estatística do bloco de resultado: ícone + label + valor + barrinha de destaque
+  resultStat: { display: "flex", flexDirection: "column", gap: 9 },
+  resultStatLabel: { fontFamily: "var(--mono)", fontSize: 9.5, color: v("t3"), textTransform: "uppercase", letterSpacing: "0.1em" },
+  resultStatValue: { fontFamily: "var(--mono)", fontSize: 16, fontWeight: 800, letterSpacing: "-0.02em", color: v("t1") },
+  resultStatBar: (color) => ({ width: 26, height: 3, borderRadius: 2, background: color }),
   btnDelete: {
     display: "flex", alignItems: "center", justifyContent: "center",
-    background: "rgba(255,59,48,0.08)", border: "1px solid rgba(255,59,48,0.15)",
-    color: "#FF3B30", borderRadius: 9, padding: "8px 12px", fontSize: 12,
-    fontWeight: 600, cursor: "pointer", transition: "all 0.2s",
-    fontFamily: "'DM Sans', sans-serif",
+    background: v("down-soft"), border: "1px solid transparent",
+    color: v("down"), borderRadius: "var(--r-sm)", padding: "9px 12px", fontSize: 12,
+    fontWeight: 600, cursor: "pointer", transition: "all 0.12s",
+    fontFamily: "var(--font)",
   },
   empty: {
-    textAlign: "center", padding: "80px 20px", color: "#333",
+    textAlign: "center", padding: "80px 20px", color: v("t3"),
   },
-  emptyTitle: { fontSize: 18, fontWeight: 600, color: "#444", marginBottom: 8 },
+  emptyTitle: { fontSize: 18, fontWeight: 700, color: v("t2"), marginBottom: 8 },
   // MODAL
   overlay: {
-    position: "fixed", inset: 0, background: "rgba(0,0,0,0.7)", zIndex: 100,
+    position: "fixed", inset: 0, background: "rgba(27,24,20,0.45)", zIndex: 100,
     display: "flex", alignItems: "center", justifyContent: "center", padding: 20,
-    backdropFilter: "blur(4px)",
+    backdropFilter: "blur(3px)",
   },
   modal: {
-    background: "#13131A", border: "1px solid rgba(255,255,255,0.1)",
-    borderRadius: 20, width: "100%", maxWidth: 540, maxHeight: "90vh",
-    overflowY: "auto", position: "relative",
+    background: v("surface"), border: `1px solid ${v("line")}`,
+    borderRadius: "var(--r-lg)", width: "100%", maxWidth: 540, maxHeight: "90vh",
+    overflowY: "auto", position: "relative", boxShadow: "0 20px 60px -20px rgba(40,32,20,0.35)",
   },
   modalHeader: {
     display: "flex", alignItems: "center", justifyContent: "space-between",
     padding: "24px 28px 0",
   },
-  modalTitle: { fontSize: 18, fontWeight: 700, letterSpacing: -0.4 },
+  modalTitle: { fontSize: 18, fontWeight: 800, letterSpacing: -0.3, color: v("t1") },
   modalBody: { padding: "24px 28px 28px" },
   formGrid: { display: "grid", gridTemplateColumns: "1fr 1fr", gap: 14 },
   formGroup: { display: "flex", flexDirection: "column", gap: 6 },
   formGroupFull: { display: "flex", flexDirection: "column", gap: 6, gridColumn: "1 / -1" },
-  label: { fontSize: 11, color: "#555", textTransform: "uppercase", letterSpacing: 0.8, fontWeight: 600 },
+  label: { fontFamily: "var(--mono)", fontSize: 10, color: v("t3"), textTransform: "uppercase", letterSpacing: "0.1em", fontWeight: 500 },
   select: {
-    background: "rgba(255,255,255,0.05)", border: "1px solid rgba(255,255,255,0.08)",
-    borderRadius: 10, padding: "9px 14px", color: "#E8E8EE", fontSize: 13,
-    outline: "none", fontFamily: "'DM Sans', sans-serif",
+    background: v("surface"), border: `1px solid ${v("line-2")}`,
+    borderRadius: "var(--r-sm)", padding: "10px 14px", color: v("t1"), fontSize: 13.5,
+    outline: "none", fontFamily: "var(--font)",
     appearance: "none",
   },
   btnSubmit: {
-    width: "100%", padding: "13px", borderRadius: 12, border: "none",
-    background: "linear-gradient(135deg, #FF3A00, #FF6A00)",
-    color: "#fff", fontSize: 15, fontWeight: 700, cursor: "pointer",
-    marginTop: 8, letterSpacing: -0.3,
-    boxShadow: "0 4px 20px rgba(255,58,0,0.3)",
-    fontFamily: "'DM Sans', sans-serif",
+    width: "100%", padding: "13px", borderRadius: "var(--r-sm)", border: `1px solid ${v("line-2")}`,
+    background: "#ffffff",
+    color: v("t1"), fontSize: 15, fontWeight: 700, cursor: "pointer",
+    marginTop: 8, letterSpacing: -0.2,
+    boxShadow: "0 1px 2px rgba(27,24,20,0.10), inset 0 1px 0 rgba(255,255,255,0.6)",
+    fontFamily: "var(--font)",
   },
   // RELATÓRIO
   reportPage: {
-    position: "fixed", inset: 0, background: "#0A0A0F", zIndex: 200,
+    position: "fixed", inset: 0, background: v("bg"), zIndex: 200,
     overflowY: "auto",
   },
   reportHeader: {
-    background: "rgba(255,255,255,0.03)", borderBottom: "1px solid rgba(255,255,255,0.06)",
-    padding: "20px 32px", display: "flex", alignItems: "center", gap: 16,
+    background: v("surface"), borderBottom: `1px solid ${v("line")}`,
+    padding: "18px 32px", display: "flex", alignItems: "center", gap: 16,
   },
   btnBack: {
-    display: "flex", alignItems: "center", gap: 6,
-    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-    color: "#ccc", borderRadius: 9, padding: "8px 14px", fontSize: 13,
-    cursor: "pointer", fontFamily: "'DM Sans', sans-serif",
+    display: "flex", alignItems: "center", gap: 7,
+    background: v("surface"), border: `1px solid ${v("line-2")}`,
+    color: v("t2"), borderRadius: "var(--r-sm)", padding: "9px 15px", fontSize: 13,
+    cursor: "pointer", fontFamily: "var(--font)", fontWeight: 600,
   },
-  reportContent: { maxWidth: 900, margin: "0 auto", padding: "40px 24px" },
-  reportTitle: { fontSize: 28, fontWeight: 800, letterSpacing: -0.8, marginBottom: 4 },
-  reportSub: { fontSize: 14, color: "#444", marginBottom: 36 },
+  reportContent: { maxWidth: 980, margin: "0 auto", padding: "36px 24px" },
+  reportTitle: { fontSize: 22, fontWeight: 800, letterSpacing: -0.4, marginBottom: 4, color: v("t1") },
+  reportSub: { fontSize: 13.5, color: v("t3"), marginBottom: 28 },
   uploadZone: {
-    border: "2px dashed rgba(255,90,32,0.3)", borderRadius: 16,
+    border: `1.5px dashed ${v("line-2")}`, borderRadius: "var(--r-lg)",
     padding: "48px 32px", textAlign: "center", cursor: "pointer",
-    transition: "all 0.2s", marginBottom: 36,
-    background: "rgba(255,90,32,0.03)",
+    transition: "all 0.15s", marginBottom: 28,
+    background: v("surface"),
   },
-  uploadTitle: { fontSize: 16, fontWeight: 600, color: "#ccc", marginBottom: 6 },
-  uploadSub: { fontSize: 13, color: "#444" },
-  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(180px, 1fr))", gap: 14, marginBottom: 32 },
+  uploadTitle: { fontSize: 15, fontWeight: 700, color: v("t1"), marginBottom: 6 },
+  uploadSub: { fontSize: 13, color: v("t3") },
+  // KPI compactos — ícone no canto, número grande, contexto pequeno embaixo (estilo shadcn-admin)
+  statsGrid: { display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 14, marginBottom: 28 },
   statCard: {
-    background: "rgba(255,255,255,0.04)", border: "1px solid rgba(255,255,255,0.07)",
-    borderRadius: 14, padding: "20px 18px",
+    background: v("surface"), border: `1px solid ${v("line")}`, borderRadius: "var(--r-lg)",
+    padding: "18px 20px", boxShadow: "var(--shadow)", position: "relative",
   },
-  statLabel: { fontSize: 11, color: "#444", textTransform: "uppercase", letterSpacing: 0.8, marginBottom: 8 },
-  statValue: { fontSize: 26, fontWeight: 800, letterSpacing: -1 },
-  statSub: { fontSize: 11, color: "#555", marginTop: 4 },
+  statCardTop: { display: "flex", alignItems: "flex-start", justifyContent: "space-between", marginBottom: 14 },
+  statIconWrap: (color) => ({
+    width: 30, height: 30, borderRadius: 9, flexShrink: 0,
+    background: `${color}1F`, color,
+    display: "flex", alignItems: "center", justifyContent: "center",
+  }),
+  statLabel: { fontFamily: "var(--mono)", fontSize: 10, color: v("t3"), textTransform: "uppercase", letterSpacing: "0.12em", fontWeight: 500 },
+  statValue: { fontFamily: "var(--mono)", fontSize: 22, fontWeight: 800, letterSpacing: "-0.03em", color: v("t1"), lineHeight: 1 },
+  statSub: { fontSize: 11.5, color: v("t3"), marginTop: 7 },
   tableWrap: {
-    background: "rgba(255,255,255,0.02)", border: "1px solid rgba(255,255,255,0.06)",
-    borderRadius: 14, overflow: "hidden",
+    background: v("surface"), border: `1px solid ${v("line")}`,
+    borderRadius: "var(--r-lg)", overflow: "hidden", boxShadow: "var(--shadow)",
   },
-  tableHeader: { padding: "16px 20px", borderBottom: "1px solid rgba(255,255,255,0.06)", fontSize: 13, fontWeight: 600 },
-  table: { width: "100%", borderCollapse: "collapse", fontSize: 12 },
-  th: { padding: "10px 16px", textAlign: "left", color: "#444", fontSize: 11, textTransform: "uppercase", letterSpacing: 0.6, borderBottom: "1px solid rgba(255,255,255,0.04)" },
-  td: { padding: "10px 16px", borderBottom: "1px solid rgba(255,255,255,0.03)", color: "#bbb" },
+  tableHeader: { padding: "16px 20px", borderBottom: `1px solid ${v("line")}`, fontSize: 13.5, fontWeight: 700, color: v("t1") },
+  table: { width: "100%", borderCollapse: "collapse", fontSize: 12.5 },
+  th: { padding: "10px 18px", textAlign: "left", color: v("t3"), fontFamily: "var(--mono)", fontSize: 10, textTransform: "uppercase", letterSpacing: "0.1em", borderBottom: `1px solid ${v("line")}`, fontWeight: 500 },
+  td: { padding: "10px 18px", borderBottom: `1px solid ${v("line")}`, color: v("t2") },
   btnSecondary: {
     display: "flex", alignItems: "center", gap: 8,
-    background: "rgba(255,255,255,0.06)", border: "1px solid rgba(255,255,255,0.1)",
-    color: "#ccc", borderRadius: 10, padding: "10px 20px", fontSize: 14,
-    fontWeight: 600, cursor: "pointer", letterSpacing: -0.2,
-    fontFamily: "'DM Sans', sans-serif",
+    background: v("surface"), border: `1px solid ${v("line-2")}`,
+    color: v("t1"), borderRadius: "var(--r-sm)", padding: "10px 18px", fontSize: 13.5,
+    fontWeight: 600, cursor: "pointer", transition: "background .12s",
+    fontFamily: "var(--font)",
   },
   reportBox: {
-    marginTop: 14, padding: "12px 14px", borderRadius: 10,
-    background: "rgba(0,229,160,0.04)", border: "1px solid rgba(0,229,160,0.15)",
+    marginTop: 14, padding: "14px 16px", borderRadius: "var(--r-md)",
+    background: v("up-soft"), border: "1px solid transparent",
   },
   reportBoxTitle: {
-    fontSize: 10, color: "#00E5A0", textTransform: "uppercase",
-    letterSpacing: 0.8, fontWeight: 700, marginBottom: 10,
-    display: "flex", alignItems: "center", gap: 6,
+    fontFamily: "var(--mono)", fontSize: 10, color: v("up"), textTransform: "uppercase",
+    letterSpacing: "0.1em", fontWeight: 600, marginBottom: 12,
+    display: "flex", alignItems: "center", gap: 7,
   },
-  reportBoxGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 10 },
-  reportBoxItem: { display: "flex", flexDirection: "column", gap: 2 },
-  reportBoxLabel: { fontSize: 9, color: "#444", textTransform: "uppercase", letterSpacing: 0.6 },
-  reportBoxValue: { fontSize: 13, fontWeight: 700, color: "#ccc" },
+  reportBoxGrid: { display: "grid", gridTemplateColumns: "repeat(3, 1fr)", gap: 12 },
+  reportBoxItem: { display: "flex", flexDirection: "column", gap: 3 },
+  reportBoxLabel: { fontFamily: "var(--mono)", fontSize: 9, color: v("t3"), textTransform: "uppercase", letterSpacing: "0.08em" },
+  reportBoxValue: { fontFamily: "var(--mono)", fontSize: 14, fontWeight: 700, color: v("t1") },
   barRow: { marginBottom: 14 },
-  barTrack: { height: 8, borderRadius: 6, background: "rgba(255,255,255,0.05)", overflow: "hidden" },
+  barTrack: { height: 8, borderRadius: 6, background: v("surface-2"), overflow: "hidden", border: `1px solid ${v("line")}` },
   btnSaveReport: {
     display: "flex", alignItems: "center", gap: 8,
-    background: "linear-gradient(135deg, #FF3A00, #FF6A00)",
-    color: "#fff", border: "none", borderRadius: 10,
-    padding: "10px 20px", fontSize: 13, fontWeight: 600,
-    cursor: "pointer", letterSpacing: -0.2, marginBottom: 20,
-    boxShadow: "0 4px 20px rgba(255,58,0,0.3)",
-    fontFamily: "'DM Sans', sans-serif",
+    background: "#ffffff", border: `1px solid ${v("line-2")}`,
+    color: v("t1"), borderRadius: "var(--r-sm)",
+    padding: "10px 18px", fontSize: 13.5, fontWeight: 600,
+    cursor: "pointer", marginBottom: 20,
+    boxShadow: "0 1px 2px rgba(27,24,20,0.10), inset 0 1px 0 rgba(255,255,255,0.6)",
+    fontFamily: "var(--font)",
   },
 };
 
@@ -408,7 +501,7 @@ function FormModal({ onClose, onSave, loading }) {
       <div style={S.modal} className="modal">
         <div style={S.modalHeader} className="modal-header">
           <span style={S.modalTitle}>Nova Welcome Boost</span>
-          <button onClick={onClose} style={{ background: "none", border: "none", color: "#555", cursor: "pointer" }}>
+          <button onClick={onClose} style={{ background: "none", border: "none", color: "var(--t3)", cursor: "pointer" }}>
             <IconClose />
           </button>
         </div>
@@ -577,6 +670,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
       totalStake, ggr, qtdApostas,
       idsUnicos: idsTodas.size,
       idsUnicosValidas: idsValidas.size,
+      idsProcessados: [...idsTodas].filter((id) => id !== undefined && id !== null && id !== ""),
       totalApostasGeral: filtered.length,
       ticketMedio, wins, lost, cashout, valid,
     };
@@ -602,6 +696,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
         wins: stats.wins,
         lost: stats.lost,
         cashout: stats.cashout,
+        player_ids: stats.idsProcessados,
       });
       setSavedReport(true);
     } catch (e) {
@@ -612,10 +707,10 @@ function ReportPage({ boost, onBack, onSaveReport }) {
 
   const statusColor = (s) => {
     const sl = (s || "").toLowerCase();
-    if (sl === "win") return "#00E5A0";
-    if (sl === "lost") return "#FF5A20";
-    if (sl === "cashout") return "#FF9500";
-    return "#555";
+    if (sl === "win") return "var(--up)";
+    if (sl === "lost") return "var(--down)";
+    if (sl === "cashout") return "var(--warn)";
+    return "var(--t3)";
   };
 
   return (
@@ -625,8 +720,8 @@ function ReportPage({ boost, onBack, onSaveReport }) {
           <IconArrow left /> Voltar
         </button>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>{boost.confronto}</div>
-          <div style={{ fontSize: 11, color: "#444", fontFamily: "monospace" }}>ID {boost.id_jogo}</div>
+          <div style={{ fontSize: 15, fontWeight: 700, color: "var(--t1)" }}>{boost.confronto}</div>
+          <div style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--mono)" }}>ID {boost.id_jogo}</div>
         </div>
       </div>
 
@@ -638,22 +733,22 @@ function ReportPage({ boost, onBack, onSaveReport }) {
 
         {!rows ? (
           <div
-            style={{ ...S.uploadZone, borderColor: dragging ? "#FF5A20" : "rgba(255,90,32,0.3)" }}
+            style={{ ...S.uploadZone, borderColor: dragging ? "var(--acc)" : "var(--line-2)" }}
             onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
             onDragLeave={() => setDragging(false)}
             onDrop={onDrop}
             onClick={() => document.getElementById("xlsxInput").click()}
           >
             <input id="xlsxInput" type="file" accept=".xlsx,.xls" style={{ display: "none" }} onChange={onInput} />
-            <div style={{ color: "#FF5A20", marginBottom: 12 }}><IconUpload /></div>
+            <div style={{ color: "var(--acc)", marginBottom: 12 }}><IconUpload /></div>
             <div style={S.uploadTitle}>Solte o arquivo xlsx aqui</div>
             <div style={S.uploadSub}>ou clique para selecionar — relatório do Altenar</div>
           </div>
         ) : (
           <>
-            <div style={{ ...S.uploadZone, padding: "16px 20px", textAlign: "left", marginBottom: 24, cursor: "default", background: "rgba(255,255,255,0.02)" }}>
+            <div style={{ ...S.uploadZone, padding: "16px 20px", textAlign: "left", marginBottom: 24, cursor: "default", background: "var(--surface-2)" }}>
               <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 12, flexWrap: "wrap", gap: 10 }}>
-                <div style={{ fontSize: 12, fontWeight: 700, color: "#ccc", textTransform: "uppercase", letterSpacing: 0.6 }}>
+                <div style={{ fontSize: 12, fontWeight: 700, color: "var(--t1)", textTransform: "uppercase", letterSpacing: 0.6 }}>
                   Mercados encontrados no arquivo ({marketOptions.length})
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
@@ -672,7 +767,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
                 </div>
               </div>
 
-              <div style={{ fontSize: 11, color: "#555", marginBottom: 10 }}>
+              <div style={{ fontSize: 11, color: "var(--t3)", marginBottom: 10 }}>
                 Marque os mercados que devem entrar no cálculo do relatório (ex: apenas "Vencedor do encontro" / "1x2") e desmarque o restante (ex: apostas combinadas / Bet Builder com condições extras).
               </div>
 
@@ -681,10 +776,10 @@ function ReportPage({ boost, onBack, onSaveReport }) {
                   <label
                     key={opt.value}
                     style={{
-                      display: "flex", alignItems: "center", gap: 10, fontSize: 12, color: "#ccc",
+                      display: "flex", alignItems: "center", gap: 10, fontSize: 12.5, color: "var(--t2)",
                       cursor: "pointer", padding: "7px 10px", borderRadius: 8,
-                      background: selectedMarkets?.has(opt.value) ? "rgba(255,90,32,0.06)" : "rgba(255,255,255,0.02)",
-                      border: `1px solid ${selectedMarkets?.has(opt.value) ? "rgba(255,90,32,0.18)" : "rgba(255,255,255,0.04)"}`,
+                      background: selectedMarkets?.has(opt.value) ? "var(--acc-soft)" : "var(--surface)",
+                      border: `1px solid ${selectedMarkets?.has(opt.value) ? "var(--acc-line)" : "var(--line)"}`,
                     }}
                   >
                     <input
@@ -695,12 +790,12 @@ function ReportPage({ boost, onBack, onSaveReport }) {
                     <span style={{ flex: 1, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }} title={opt.value}>
                       {opt.value}
                     </span>
-                    <span style={{ color: "#555", fontSize: 11, flexShrink: 0 }}>{opt.count} apostas</span>
+                    <span style={{ color: "var(--t3)", fontSize: 11, flexShrink: 0 }}>{opt.count} apostas</span>
                   </label>
                 ))}
               </div>
 
-              <div style={{ fontSize: 11, color: "#555", marginTop: 12 }}>
+              <div style={{ fontSize: 11, color: "var(--t3)", marginTop: 12 }}>
                 {selectedMarkets ? (
                   removedByMarket > 0
                     ? `${selectedMarkets.size} de ${marketOptions.length} mercados selecionados — ${removedByMarket} de ${rows.length} apostas foram ignoradas, restaram ${marketFiltered.length} para o cálculo.`
@@ -711,29 +806,42 @@ function ReportPage({ boost, onBack, onSaveReport }) {
 
             <div style={S.statsGrid} className="stats-grid">
               {[
-                { label: "Total Stakes", value: fmt(stats.totalStake), sub: `${stats.qtdApostas} apostas válidas de ${stats.totalApostasGeral}`, color: "#E8E8EE" },
-                { label: "GGR", value: fmt(stats.ggr), sub: "Stake − Winnings", color: stats.ggr >= 0 ? "#00E5A0" : "#FF5A20" },
-                { label: "Usuários", value: stats.idsUnicos, sub: `únicos no total · ${stats.idsUnicosValidas} em apostas válidas`, color: "#A78BFA" },
-                { label: "Ticket Médio", value: fmt(stats.ticketMedio), sub: "por aposta", color: "#FF9500" },
-                { label: "Wins", value: stats.wins, sub: `${stats.qtdApostas > 0 ? ((stats.wins / stats.qtdApostas) * 100).toFixed(1) : 0}% do total`, color: "#00E5A0" },
-                { label: "Lost", value: stats.lost, sub: `${stats.qtdApostas > 0 ? ((stats.lost / stats.qtdApostas) * 100).toFixed(1) : 0}% do total`, color: "#FF5A20" },
-                { label: "Cashout", value: stats.cashout, sub: "apostas encerradas", color: "#FF9500" },
+                { label: "Total Stakes", value: fmt(stats.totalStake), sub: `${stats.qtdApostas} apostas válidas de ${stats.totalApostasGeral}`, color: "var(--t1)" },
+                { label: "GGR", value: fmt(stats.ggr), sub: "Stake − Winnings", color: stats.ggr >= 0 ? "var(--up)" : "var(--down)" },
+                { label: "Usuários", value: stats.idsUnicos, sub: `únicos no total · ${stats.idsUnicosValidas} em apostas válidas`, color: "var(--info)" },
+                { label: "Ticket Médio", value: fmt(stats.ticketMedio), sub: "por aposta", color: "var(--warn)" },
+                { label: "Wins", value: stats.wins, sub: `${stats.qtdApostas > 0 ? ((stats.wins / stats.qtdApostas) * 100).toFixed(1) : 0}% do total`, color: "var(--up)" },
+                { label: "Lost", value: stats.lost, sub: `${stats.qtdApostas > 0 ? ((stats.lost / stats.qtdApostas) * 100).toFixed(1) : 0}% do total`, color: "var(--down)" },
+                { label: "Cashout", value: stats.cashout, sub: "apostas encerradas", color: "var(--warn)" },
               ].map((s) => (
                 <div key={s.label} style={S.statCard}>
-                  <div style={S.statLabel}>{s.label}</div>
+                  <div style={S.statCardTop}>
+                    <div style={S.statLabel}>{s.label}</div>
+                    <div style={S.statIconWrap(s.color)}><IconChart /></div>
+                  </div>
                   <div style={{ ...S.statValue, color: s.color }}>{s.value}</div>
                   <div style={S.statSub}>{s.sub}</div>
                 </div>
               ))}
             </div>
 
-            <button
-              style={{ ...S.btnSaveReport, opacity: savingReport ? 0.6 : 1 }}
-              onClick={saveReport}
-              disabled={savingReport || savedReport}
-            >
-              <IconSave /> {savedReport ? "Relatório Salvo ✓" : savingReport ? "Salvando..." : "Salvar Relatório"}
-            </button>
+            <div style={{ display: "flex", gap: 10, flexWrap: "wrap" }}>
+              <button
+                style={{ ...S.btnSaveReport, opacity: savingReport ? 0.6 : 1 }}
+                onClick={saveReport}
+                disabled={savingReport || savedReport}
+              >
+                <IconSave /> {savedReport ? "Relatório Salvo ✓" : savingReport ? "Salvando..." : "Salvar Relatório"}
+              </button>
+              <button
+                style={{ ...S.btnSecondary, display: "flex", alignItems: "center", gap: 8, padding: "10px 18px", fontSize: 13.5, marginBottom: 20 }}
+                onClick={() => downloadIds(stats.idsProcessados, boost)}
+                disabled={!stats.idsProcessados.length}
+                title="Baixa em .csv a lista de IDs de jogadores que entraram no cálculo deste relatório"
+              >
+                <IconDownload /> Baixar Ids ({stats.idsProcessados.length})
+              </button>
+            </div>
 
             <div style={S.tableWrap} className="table-wrap">
               <div style={S.tableHeader}>
@@ -756,14 +864,14 @@ function ReportPage({ boost, onBack, onSaveReport }) {
                       const player = r["Player"] || r["External User Id"] || "-";
                       return (
                         <tr key={i}>
-                          <td style={{ ...S.td, fontFamily: "monospace", fontSize: 11 }}>{player}</td>
+                          <td style={{ ...S.td, fontFamily: "var(--mono)", fontSize: 11.5 }}>{player}</td>
                           <td style={S.td}>{fmt(stake)}</td>
                           <td style={S.td}>{fmt(win)}</td>
-                          <td style={{ ...S.td, color: rowGgr >= 0 ? "#00E5A0" : "#FF5A20", fontWeight: 600 }}>{fmt(rowGgr)}</td>
+                          <td style={{ ...S.td, color: rowGgr >= 0 ? "var(--up)" : "var(--down)", fontWeight: 600 }}>{fmt(rowGgr)}</td>
                           <td style={S.td}>
                             <span style={{ color: statusColor(r["Status"]), fontWeight: 600 }}>{r["Status"] || "-"}</span>
                           </td>
-                          <td style={{ ...S.td, color: "#555" }}>{r["Bet date"] || "-"}</td>
+                          <td style={{ ...S.td, color: "var(--t3)" }}>{r["Bet date"] || "-"}</td>
                         </tr>
                       );
                     })}
@@ -771,7 +879,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
                 </table>
               </div>
               {stats.valid.length > tableLimit && (
-                <div style={{ padding: "14px 20px", textAlign: "center", borderTop: "1px solid rgba(255,255,255,0.04)" }}>
+                <div style={{ padding: "14px 20px", textAlign: "center", borderTop: "1px solid var(--line)" }}>
                   <button
                     style={{ ...S.btnSecondary, padding: "8px 18px", fontSize: 12 }}
                     onClick={() => setTableLimit((n) => n + 100)}
@@ -795,8 +903,11 @@ function ReportPage({ boost, onBack, onSaveReport }) {
   );
 }
 
-// ─── HISTÓRICO DE RELATÓRIOS ─────────────────────────────────────────────────
-function HistoryPage({ onBack }) {
+// ─── IDS REPETIDOS ───────────────────────────────────────────────────────────
+// Cruza os IDs de jogadores guardados em cada relatório salvo e aponta quais
+// IDs aparecem em mais de um relatório (possível indício de reaproveitamento
+// da mesma conta em diferentes Welcome Boosts).
+function RepeatedIdsPage({ onBack }) {
   const [reports, setReports] = useState(null);
 
   useEffect(() => {
@@ -805,7 +916,7 @@ function HistoryPage({ onBack }) {
       try {
         const data = await api(
           "GET",
-          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento)&order=created_at.desc"
+          "boost_relatorios?select=id,boost_id,player_ids,created_at,welcome_boosts(confronto,data_evento)&order=created_at.desc"
         );
         if (!cancelled) setReports(data || []);
       } catch (e) {
@@ -816,6 +927,49 @@ function HistoryPage({ onBack }) {
     return () => { cancelled = true; };
   }, []);
 
+  const hasIdData = reports ? reports.some((r) => Array.isArray(r.player_ids) && r.player_ids.length > 0) : false;
+
+  // Agrupa ocorrências por ID de jogador e filtra os que aparecem em mais de um relatório
+  const repeated = useMemo(() => {
+    if (!reports) return null;
+    const byId = new Map();
+    for (const r of reports) {
+      const ids = Array.isArray(r.player_ids) ? r.player_ids : [];
+      for (const pid of ids) {
+        if (pid === undefined || pid === null || pid === "") continue;
+        if (!byId.has(pid)) byId.set(pid, []);
+        byId.get(pid).push({
+          reportId: r.id,
+          confronto: r.welcome_boosts?.confronto || "-",
+          data_evento: r.welcome_boosts?.data_evento,
+          created_at: r.created_at,
+        });
+      }
+    }
+    const result = [];
+    for (const [pid, occurrences] of byId.entries()) {
+      if (occurrences.length > 1) result.push({ id: pid, occurrences });
+    }
+    result.sort((a, b) => b.occurrences.length - a.occurrences.length);
+    return result;
+  }, [reports]);
+
+  const downloadRepeated = () => {
+    if (!repeated || repeated.length === 0) return;
+    const lines = ["ID;Quantidade de relatorios;Confrontos"];
+    for (const item of repeated) {
+      const confrontos = item.occurrences.map((o) => o.confronto).join(" | ");
+      lines.push(`${item.id};${item.occurrences.length};"${confrontos}"`);
+    }
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = "ids_repetidos.csv";
+    a.click();
+    URL.revokeObjectURL(url);
+  };
+
   return (
     <div style={S.reportPage}>
       <div style={S.reportHeader} className="report-header">
@@ -823,43 +977,59 @@ function HistoryPage({ onBack }) {
           <IconArrow left /> Voltar
         </button>
         <div>
-          <div style={{ fontSize: 15, fontWeight: 700 }}>Histórico de Relatórios</div>
-          <div style={{ fontSize: 11, color: "#444" }}>Relatórios salvos das Welcome Boosts</div>
+          <div style={{ fontSize: 15, fontWeight: 700 }}>IDs Repetidos</div>
+          <div style={{ fontSize: 11, color: "var(--t3)" }}>Jogadores que aparecem em mais de um relatório salvo</div>
         </div>
       </div>
 
       <div style={S.reportContent} className="report-content">
-        <div style={S.reportTitle} className="report-title">Histórico de Relatórios</div>
-        <div style={S.reportSub}>Relatórios de resultado salvos no Supabase</div>
+        <div style={S.reportTitle} className="report-title">IDs Repetidos</div>
+        <div style={S.reportSub}>Cruzamento dos IDs de jogadores entre todos os relatórios salvos no Supabase</div>
 
         {reports === null ? (
-          <div style={{ textAlign: "center", padding: 80, color: "#333", fontSize: 14 }}>Carregando...</div>
-        ) : reports.length === 0 ? (
+          <div style={{ textAlign: "center", padding: 80, color: "var(--t3)", fontSize: 14 }}>Carregando...</div>
+        ) : !hasIdData ? (
           <div style={S.empty}>
-            <div style={S.emptyTitle}>Nenhum relatório salvo</div>
-            <div style={{ fontSize: 13, color: "#333" }}>Salve um relatório a partir da tela de uma Welcome Boost</div>
+            <div style={S.emptyTitle}>Nenhum dado de IDs disponível ainda</div>
+            <div style={{ fontSize: 13, color: "var(--t3)", maxWidth: 460, margin: "0 auto" }}>
+              Relatórios salvos antes desta atualização não guardam a lista de IDs processados.
+              Gere e salve novos relatórios a partir de agora para que eles entrem nesse cruzamento.
+            </div>
+          </div>
+        ) : repeated === null || repeated.length === 0 ? (
+          <div style={S.empty}>
+            <div style={S.emptyTitle}>Nenhum ID repetido encontrado</div>
+            <div style={{ fontSize: 13, color: "var(--t3)" }}>Nenhum jogador aparece em mais de um relatório salvo até o momento</div>
           </div>
         ) : (
           <div style={S.tableWrap} className="table-wrap">
-            <div style={S.tableHeader}>Relatórios ({reports.length})</div>
+            <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, padding: "16px 20px", borderBottom: "1px solid var(--line)" }}>
+              <div style={S.tableHeader}>IDs repetidos ({repeated.length})</div>
+              <button style={{ ...S.btnSecondary, padding: "8px 16px", fontSize: 12 }} onClick={downloadRepeated}>
+                <IconDownload /> Baixar lista (CSV)
+              </button>
+            </div>
             <div style={{ overflowX: "auto" }}>
               <table style={S.table}>
                 <thead>
                   <tr>
-                    {["Confronto", "Data do Evento", "GGR", "Total Stakes", "Usuários", "Salvo em"].map((h) => (
+                    {["ID do Jogador", "Aparece em", "Relatórios (Confronto)"].map((h) => (
                       <th key={h} style={S.th}>{h}</th>
                     ))}
                   </tr>
                 </thead>
                 <tbody>
-                  {reports.map((r) => (
-                    <tr key={r.id}>
-                      <td style={{ ...S.td, color: "#fff", fontWeight: 600 }}>{r.welcome_boosts?.confronto || "-"}</td>
-                      <td style={S.td}>{r.welcome_boosts?.data_evento ? fmtDate(r.welcome_boosts.data_evento) : "-"}</td>
-                      <td style={{ ...S.td, color: r.ggr >= 0 ? "#00E5A0" : "#FF5A20", fontWeight: 600 }}>{fmt(r.ggr)}</td>
-                      <td style={S.td}>{fmt(r.total_stake)}</td>
-                      <td style={S.td}>{r.ids_unicos}</td>
-                      <td style={{ ...S.td, color: "#555" }}>{fmtDate(r.created_at)}</td>
+                  {repeated.map((item) => (
+                    <tr key={item.id}>
+                      <td style={{ ...S.td, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--t1)" }}>{item.id}</td>
+                      <td style={S.td}>{item.occurrences.length} relatórios</td>
+                      <td style={{ ...S.td, color: "var(--t2)" }}>
+                        {item.occurrences.map((o, i) => (
+                          <span key={i} style={{ display: "inline-block", marginRight: 10 }}>
+                            {o.confronto}{i < item.occurrences.length - 1 ? " ·" : ""}
+                          </span>
+                        ))}
+                      </td>
                     </tr>
                   ))}
                 </tbody>
@@ -935,7 +1105,7 @@ function DashboardPage({ onBack }) {
         </button>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700 }}>Relatórios Gerais</div>
-          <div style={{ fontSize: 11, color: "#444" }}>Dashboard interativo de resultados</div>
+          <div style={{ fontSize: 11, color: "var(--t3)" }}>Dashboard interativo de resultados</div>
         </div>
       </div>
 
@@ -944,9 +1114,9 @@ function DashboardPage({ onBack }) {
         <div style={S.reportSub}>Visão consolidada de todos os relatórios salvos — filtre pelo período do evento</div>
 
         <div style={S.filterBar}>
-          <div style={{ fontSize: 12, color: "#555", marginRight: 4 }}>Período do evento:</div>
+          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período do evento:</div>
           <input type="date" style={S.input} value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
-          <span style={{ color: "#444", fontSize: 13 }}>até</span>
+          <span style={{ color: "var(--t3)", fontSize: 13 }}>até</span>
           <input type="date" style={S.input} value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
           {(periodFrom || periodTo) && (
             <button
@@ -959,27 +1129,30 @@ function DashboardPage({ onBack }) {
         </div>
 
         {reports === null ? (
-          <div style={{ textAlign: "center", padding: 80, color: "#333", fontSize: 14 }}>Carregando...</div>
+          <div style={{ textAlign: "center", padding: 80, color: "var(--t3)", fontSize: 14 }}>Carregando...</div>
         ) : filtered.length === 0 ? (
           <div style={S.empty}>
             <div style={S.emptyTitle}>Nenhum relatório no período</div>
-            <div style={{ fontSize: 13, color: "#333" }}>Ajuste o filtro ou salve novos relatórios a partir de uma boost</div>
+            <div style={{ fontSize: 13, color: "var(--t3)" }}>Ajuste o filtro ou salve novos relatórios a partir de uma boost</div>
           </div>
         ) : (
           <>
             <div style={S.statsGrid} className="stats-grid">
               {[
-                { label: "Relatórios", value: filtered.length, sub: "no período selecionado", color: "#E8E8EE" },
-                { label: "Total Stakes", value: fmt(totals.totalStake), sub: `${totals.qtdApostas} apostas`, color: "#E8E8EE" },
-                { label: "GGR", value: fmt(totals.ggr), sub: "Stake − Winnings", color: totals.ggr >= 0 ? "#00E5A0" : "#FF5A20" },
-                { label: "Usuários", value: totals.idsUnicos, sub: "soma de usuários únicos", color: "#A78BFA" },
-                { label: "Ticket Médio", value: fmt(ticketMedio), sub: "médio geral", color: "#FF9500" },
-                { label: "Wins", value: totals.wins, sub: "apostas ganhas", color: "#00E5A0" },
-                { label: "Lost", value: totals.lost, sub: "apostas perdidas", color: "#FF5A20" },
-                { label: "Cashout", value: totals.cashout, sub: "apostas encerradas", color: "#FF9500" },
+                { label: "Relatórios", value: filtered.length, sub: "no período selecionado", color: "var(--t1)" },
+                { label: "Total Stakes", value: fmt(totals.totalStake), sub: `${totals.qtdApostas} apostas`, color: "var(--t1)" },
+                { label: "GGR", value: fmt(totals.ggr), sub: "Stake − Winnings", color: totals.ggr >= 0 ? "var(--up)" : "var(--down)" },
+                { label: "Usuários", value: totals.idsUnicos, sub: "soma de usuários únicos", color: "var(--info)" },
+                { label: "Ticket Médio", value: fmt(ticketMedio), sub: "médio geral", color: "var(--warn)" },
+                { label: "Wins", value: totals.wins, sub: "apostas ganhas", color: "var(--up)" },
+                { label: "Lost", value: totals.lost, sub: "apostas perdidas", color: "var(--down)" },
+                { label: "Cashout", value: totals.cashout, sub: "apostas encerradas", color: "var(--warn)" },
               ].map((s) => (
                 <div key={s.label} style={S.statCard}>
-                  <div style={S.statLabel}>{s.label}</div>
+                  <div style={S.statCardTop}>
+                    <div style={S.statLabel}>{s.label}</div>
+                    <div style={S.statIconWrap(s.color)}><IconChart /></div>
+                  </div>
                   <div style={{ ...S.statValue, color: s.color }}>{s.value}</div>
                   <div style={S.statSub}>{s.sub}</div>
                 </div>
@@ -995,21 +1168,19 @@ function DashboardPage({ onBack }) {
                   return (
                     <div key={r.id} style={S.barRow}>
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12 }}>
-                        <span style={{ color: "#ccc", fontWeight: 600 }}>
+                        <span style={{ color: "var(--t1)", fontWeight: 600 }}>
                           {r.welcome_boosts?.confronto || "-"}
                           {r.welcome_boosts?.data_evento && (
-                            <span style={{ color: "#444", fontWeight: 400, marginLeft: 8 }}>{fmtDate(r.welcome_boosts.data_evento)}</span>
+                            <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 8 }}>{fmtDate(r.welcome_boosts.data_evento)}</span>
                           )}
                         </span>
-                        <span style={{ color: ggr >= 0 ? "#00E5A0" : "#FF5A20", fontWeight: 700 }}>{fmt(ggr)}</span>
+                        <span style={{ color: ggr >= 0 ? "var(--up)" : "var(--down)", fontWeight: 700 }}>{fmt(ggr)}</span>
                       </div>
                       <div style={S.barTrack}>
                         <div
                           style={{
                             height: "100%", borderRadius: 6, width: `${pct}%`,
-                            background: ggr >= 0
-                              ? "linear-gradient(90deg, #00E5A0, #00B583)"
-                              : "linear-gradient(90deg, #FF5A20, #FF3A00)",
+                            background: ggr >= 0 ? "var(--up)" : "var(--down)",
                           }}
                         />
                       </div>
@@ -1050,16 +1221,88 @@ function BoostCard({ boost, report, onReport, onDelete }) {
           </div>
           {teamB && <div style={S.avatar(colorB)} className="avatar-circle">{initials(teamB)}</div>}
         </div>
-        <span style={S.badge(cfg.color, cfg.bg)}>{cfg.label}</span>
+        <span style={S.badge(cfg.color, cfg.bg)}>
+          <span style={{ width: 6, height: 6, borderRadius: 99, background: cfg.color, display: "inline-block" }} />
+          {cfg.label}
+        </span>
       </div>
+
+      {boost.mercado && (
+        <div style={S.marketBox}>
+          <div style={S.marketBoxIcon}><IconTag /></div>
+          <div>
+            <div style={S.marketBoxLabel}>Mercado</div>
+            <div style={S.marketBoxValue}>{boost.mercado}</div>
+          </div>
+        </div>
+      )}
 
       <div style={S.oddRow}>
         <span style={S.oddOld}>{boost.odd_antiga}</span>
         <span style={S.oddArrow}>→</span>
         <span style={S.oddNew}>{boost.odd_nova}</span>
-        <span style={{ ...S.oddArrow, fontSize: 11, color: "#00E5A0", marginLeft: 4 }}>+{boost_pct}%</span>
-        <span style={S.maxStake}>Max {fmt(boost.max_stake)}</span>
+        <span style={{ ...S.badge("var(--up)", "var(--up-soft)"), marginLeft: 2 }}>+{boost_pct}%</span>
+        <span style={S.maxStake}>Max <span className="num" style={{ fontWeight: 800, color: "var(--t1)" }}>{fmt(boost.max_stake)}</span></span>
       </div>
+
+      {report && (
+        <div style={S.reportBox}>
+          <div style={S.reportBoxTitle}><IconChart /> Resultado do Relatório</div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: 16 }} className="result-stats-grid">
+            <div style={S.resultStat}>
+              <div style={S.statIconWrap("var(--up)")}><IconChart /></div>
+              <div>
+                <div style={S.resultStatLabel}>GGR</div>
+                <div style={{ ...S.resultStatValue, color: report.ggr >= 0 ? "var(--up)" : "var(--down)" }}>{fmt(report.ggr)}</div>
+              </div>
+              <div style={S.resultStatBar(report.ggr >= 0 ? "var(--up)" : "var(--down)")} />
+            </div>
+            <div style={S.resultStat}>
+              <div style={S.statIconWrap("var(--info)")}><IconCoin /></div>
+              <div>
+                <div style={S.resultStatLabel}>Total Stakes</div>
+                <div style={S.resultStatValue}>{fmt(report.total_stake)}</div>
+              </div>
+              <div style={S.resultStatBar("var(--info)")} />
+            </div>
+            <div style={S.resultStat}>
+              <div style={S.statIconWrap("var(--info)")}><IconUser /></div>
+              <div>
+                <div style={S.resultStatLabel}>Usuários</div>
+                <div style={S.resultStatValue}>{report.ids_unicos}</div>
+              </div>
+              <div style={S.resultStatBar("var(--info)")} />
+            </div>
+          </div>
+
+          <div style={{ height: 1, background: "var(--line)", margin: "16px 0" }} />
+
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(135px, 1fr))", gap: 16 }} className="result-stats-grid">
+            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <div style={S.statIconWrap("var(--warn)")}><IconTicket /></div>
+              <div>
+                <div style={S.resultStatLabel}>Ticket Médio</div>
+                <div style={{ ...S.resultStatValue, fontSize: 14 }}>{fmt(report.ticket_medio)}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <div style={S.statIconWrap("var(--up)")}><IconTrophy /></div>
+              <div>
+                <div style={S.resultStatLabel}>Wins / Lost</div>
+                <div style={{ ...S.resultStatValue, fontSize: 14 }}>{report.wins} / {report.lost}</div>
+              </div>
+            </div>
+            <div style={{ display: "flex", alignItems: "center", gap: 11 }}>
+              <div style={S.statIconWrap("var(--down)")}><IconCashout /></div>
+              <div>
+                <div style={S.resultStatLabel}>Cashout</div>
+                <div style={{ ...S.resultStatValue, fontSize: 14 }}>{report.cashout}</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
 
       <div style={S.metaRow} className="meta-row">
         <div style={S.metaRowItem}>
@@ -1089,7 +1332,7 @@ function BoostCard({ boost, report, onReport, onDelete }) {
           <span style={S.metaRowIconWrap}><IconUser /></span>
           <span style={S.metaRowText}>
             <span style={S.metaRowLabel}>Feito por</span>
-            <span style={{ ...S.metaRowValue, color: "#FF9500" }}>{boost.feito_por}</span>
+            <span style={{ ...S.metaRowValue, color: "var(--warn)" }}>{boost.feito_por}</span>
           </span>
         </div>
         <div style={S.metaRowItem}>
@@ -1099,47 +1342,22 @@ function BoostCard({ boost, report, onReport, onDelete }) {
             <span style={S.metaRowValue}>{boost.pedido_por}</span>
           </span>
         </div>
-        {boost.mercado && (
-          <span style={S.marketTag}><IconTag /> {boost.mercado}</span>
-        )}
       </div>
-
-      {report && (
-        <div style={S.reportBox}>
-          <div style={S.reportBoxTitle}><IconChart /> Resultado do Relatório</div>
-          <div style={S.reportBoxGrid} className="report-box-grid">
-            <div style={S.reportBoxItem}>
-              <span style={S.reportBoxLabel}>GGR</span>
-              <span style={{ ...S.reportBoxValue, color: report.ggr >= 0 ? "#00E5A0" : "#FF5A20" }}>{fmt(report.ggr)}</span>
-            </div>
-            <div style={S.reportBoxItem}>
-              <span style={S.reportBoxLabel}>Total Stakes</span>
-              <span style={S.reportBoxValue}>{fmt(report.total_stake)}</span>
-            </div>
-            <div style={S.reportBoxItem}>
-              <span style={S.reportBoxLabel}>Usuários</span>
-              <span style={S.reportBoxValue}>{report.ids_unicos}</span>
-            </div>
-            <div style={S.reportBoxItem}>
-              <span style={S.reportBoxLabel}>Ticket Médio</span>
-              <span style={S.reportBoxValue}>{fmt(report.ticket_medio)}</span>
-            </div>
-            <div style={S.reportBoxItem}>
-              <span style={S.reportBoxLabel}>Wins / Lost</span>
-              <span style={S.reportBoxValue}>{report.wins} / {report.lost}</span>
-            </div>
-            <div style={S.reportBoxItem}>
-              <span style={S.reportBoxLabel}>Cashout</span>
-              <span style={S.reportBoxValue}>{report.cashout}</span>
-            </div>
-          </div>
-        </div>
-      )}
 
       <div style={S.cardActions}>
         <button style={S.btnReport} onClick={() => onReport(boost)}>
-          <IconChart /> Ver Relatório
+          <span style={S.btnReportLeft}><IconChart /> Ver relatório completo</span>
+          <IconChevronRight />
         </button>
+        {Array.isArray(report?.player_ids) && report.player_ids.length > 0 && (
+          <button
+            style={{ ...S.btnSecondary, display: "flex", alignItems: "center", gap: 7, padding: "12px 16px", fontSize: 13.5 }}
+            onClick={() => downloadIds(report.player_ids, boost)}
+            title="Baixa em .csv os IDs (coluna Player) processados no relatório salvo desta boost"
+          >
+            <IconDownload /> Baixar Ids
+          </button>
+        )}
         <button style={S.btnDelete} onClick={() => onDelete(boost.id)} title="Excluir">
           <IconTrash />
         </button>
@@ -1156,7 +1374,7 @@ export default function App() {
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
   const [reportBoost, setReportBoost] = useState(null);
-  const [showHistory, setShowHistory] = useState(false);
+  const [showRepeatedIds, setShowRepeatedIds] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
   const [tab, setTab] = useState("todos");
   const [filterFrom, setFilterFrom] = useState("");
@@ -1239,8 +1457,8 @@ export default function App() {
     return <ReportPage boost={reportBoost} onBack={() => setReportBoost(null)} onSaveReport={saveReport} />;
   }
 
-  if (showHistory) {
-    return <HistoryPage onBack={() => setShowHistory(false)} />;
+  if (showRepeatedIds) {
+    return <RepeatedIdsPage onBack={() => setShowRepeatedIds(false)} />;
   }
 
   if (showDashboard) {
@@ -1249,51 +1467,56 @@ export default function App() {
 
   return (
     <>
-      <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
       <div style={S.app}>
-        <div style={S.noise} />
-        <div style={S.glow} />
-        <div style={S.main} className="app-main">
-          <div style={S.header} className="app-header">
-            <div style={S.logo}>
+        <div style={S.shell} className="app-shell">
+          <aside style={S.sidebar} className="app-sidebar">
+            <div style={S.sidebarLogo}>
               <div style={S.logoMark}>W</div>
               <div>
                 <div style={S.logoText}>Welcome Boost</div>
                 <div style={S.logoSub}>Esportivabet · Manager</div>
               </div>
             </div>
-            <div style={{ display: "flex", gap: 12 }}>
-              <button style={S.btnSecondary} onClick={() => setShowDashboard(true)}>
-                <IconChart /> Relatórios Gerais
-              </button>
-              <button style={S.btnSecondary} onClick={() => setShowHistory(true)}>
-                <IconHistory /> Histórico de Relatórios
-              </button>
-              <button style={S.btnPrimary} className="btn-primary" onClick={() => setShowForm(true)}>
-                <IconPlus /> Nova Boost
-              </button>
+
+            <button style={S.btnPrimary} className="btn-primary" onClick={() => setShowForm(true)}>
+              <IconPlus /> Nova Boost
+            </button>
+
+            <div style={S.sidebarNavLabel}>Navegação</div>
+            <button style={S.sidebarNavItem(true)}>
+              <IconHistory /> Welcome Boosts
+            </button>
+            <button style={S.sidebarNavItem(false)} onClick={() => setShowDashboard(true)}>
+              <IconChart /> Relatórios Gerais
+            </button>
+            <button style={S.sidebarNavItem(false)} onClick={() => setShowRepeatedIds(true)}>
+              <IconUser /> Ids Repetidos
+            </button>
+          </aside>
+
+          <div style={S.contentArea} className="app-content">
+            <div style={S.pageTitle}>Welcome Boosts</div>
+            <div style={S.pageSub}>{counts.todos} cadastradas · {counts.ativo} ativas agora</div>
+
+            <div style={S.tabs} className="app-tabs">
+              {[
+                { key: "todos", label: `Todos (${counts.todos})` },
+                { key: "ativo", label: `Ativos (${counts.ativo})` },
+                { key: "encerrado", label: `Encerrados (${counts.encerrado})` },
+              ].map((t) => (
+                <button key={t.key} style={S.tab(tab === t.key)} onClick={() => setTab(t.key)}>
+                  {t.label}
+                </button>
+              ))}
             </div>
-          </div>
 
-          <div style={S.tabs} className="app-tabs">
-            {[
-              { key: "todos", label: `Todos (${counts.todos})` },
-              { key: "ativo", label: `Ativos (${counts.ativo})` },
-              { key: "encerrado", label: `Encerrados (${counts.encerrado})` },
-            ].map((t) => (
-              <button key={t.key} style={S.tab(tab === t.key)} onClick={() => setTab(t.key)}>
-                {t.label}
-              </button>
-            ))}
-          </div>
-
-          <div style={S.filterBar} className="filter-bar">
-            <div style={{ fontSize: 12, color: "#555", marginRight: 4 }}>Filtrar por evento:</div>
+            <div style={S.filterBar} className="filter-bar">
+            <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Filtrar por evento:</div>
             <input
               type="date" style={S.input}
               value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
             />
-            <span style={{ color: "#444", fontSize: 13 }}>até</span>
+            <span style={{ color: "var(--t3)", fontSize: 13 }}>até</span>
             <input
               type="date" style={S.input}
               value={filterTo} onChange={(e) => setFilterTo(e.target.value)}
@@ -1309,11 +1532,11 @@ export default function App() {
           </div>
 
           {loading ? (
-            <div style={{ textAlign: "center", padding: 80, color: "#333", fontSize: 14 }}>Carregando...</div>
+            <div style={{ textAlign: "center", padding: 80, color: "var(--t3)", fontSize: 14 }}>Carregando...</div>
           ) : filtered.length === 0 ? (
             <div style={S.empty}>
               <div style={S.emptyTitle}>Nenhuma boost encontrada</div>
-              <div style={{ fontSize: 13, color: "#333" }}>Cadastre uma nova ou ajuste os filtros</div>
+              <div style={{ fontSize: 13, color: "var(--t3)" }}>Cadastre uma nova ou ajuste os filtros</div>
             </div>
           ) : (
             <div style={S.grid} className="app-grid">
@@ -1322,6 +1545,7 @@ export default function App() {
               ))}
             </div>
           )}
+          </div>
         </div>
 
         {showForm && (

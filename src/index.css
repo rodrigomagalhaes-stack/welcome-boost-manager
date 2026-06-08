@@ -1,5 +1,40 @@
+@import url('https://fonts.googleapis.com/css2?family=Archivo:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600;700&display=swap');
+
+:root {
+  /* superfícies — claro, quente */
+  --bg: #f1efea;
+  --surface: #ffffff;
+  --surface-2: #f8f6f2;
+  --line: #e5e0d6;
+  --line-2: #d4cec1;
+
+  /* texto — 3 níveis */
+  --t1: #1b1814;
+  --t2: #5d564c;
+  --t3: #918a7d;
+
+  /* marca — branco/neutro */
+  --acc: #1b1814;
+  --acc-press: #000000;
+  --acc-soft: #f3f1ec;
+  --acc-line: #ddd7ca;
+
+  /* semânticas */
+  --up: #11874c;   --up-soft: #e2f3e9;
+  --down: #cc3530; --down-soft: #fbe7e6;
+  --info: #4a52c9; --info-soft: #eaebfb;
+  --warn: #b8770a; --warn-soft: #f8eed7;
+
+  --r-sm: 9px; --r-md: 13px; --r-lg: 18px;
+  --shadow: 0 1px 2px rgba(40,32,20,0.04), 0 4px 14px -8px rgba(40,32,20,0.10);
+
+  --font: 'Archivo', system-ui, sans-serif;
+  --mono: 'JetBrains Mono', ui-monospace, monospace;
+}
+
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
-body { background: #0A0A0F; }
+body { background: var(--bg); font-family: var(--font); }
+.num { font-family: var(--mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
 input[type="date"]::-webkit-calendar-picker-indicator,
 input[type="datetime-local"]::-webkit-calendar-picker-indicator {
   filter: invert(0.5);
@@ -13,6 +48,29 @@ input[type="datetime-local"]::-webkit-calendar-picker-indicator {
 }
 .table-wrap table {
   min-width: 540px;
+}
+
+@media (max-width: 880px) {
+  .app-shell {
+    flex-direction: column;
+  }
+  .app-sidebar {
+    width: 100% !important;
+    height: auto !important;
+    position: relative !important;
+    flex-direction: row !important;
+    flex-wrap: wrap;
+    align-items: center !important;
+    gap: 8px !important;
+    padding: 14px 16px !important;
+  }
+  .app-sidebar > div:first-child {
+    margin-bottom: 0 !important;
+    margin-right: auto;
+  }
+  .app-content {
+    padding: 22px 16px 50px !important;
+  }
 }
 
 @media (max-width: 720px) {
