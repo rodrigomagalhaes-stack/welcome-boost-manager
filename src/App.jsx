@@ -905,333 +905,595 @@ function ReportPage({ boost, onBack, onSaveReport }) {
 }
 
 // ─── IDS REPETIDOS — DASHBOARD ───────────────────────────────────────────────
-// Cruza os IDs de jogadores entre relatórios salvos.
-// O resultado é guardado em app_settings (checkpoint) para evitar reprocessar
-// tudo a cada abertura — só roda novamente quando há relatórios novos.
-function RepeatedIdsPage({ onBack }) {
-  // "loading" | "computing" | "stale" | "no_data" | "ready" | "error"
-  const [phase, setPhase] = useState("loading");
-  const [ck, setCk] = useState(null);          // checkpoint salvo
-  const [newCount, setNewCount] = useState(0); // relatórios novos desde o ck
-  const [detailLimit, setDetailLimit] = useState(100);
+// Cruza os jogadores entre os Welcome Boosts cadastrados e mostra, por faixa de
+// repetição, quantos IDs pegaram N welcomes e o prejuízo (GGR) que geraram.
+// Filtrável pela data/hora da welcome (campo created_at do card).
+const fmtR = (v) => {
+  if (v === undefined || v === null || isNaN(v)) return "R$ 0,00";
+  return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
+};
+const fmtRk = (v) => {
+  if (!v || isNaN(v)) return "0";
+  const a = Math.abs(v);
+  if (a >= 1000) return (v / 1000).toFixed(1).replace(".", ",") + "k";
+  return Math.round(v).toString();
+};
 
-  // ── 1. Carrega checkpoint e verifica se há relatórios novos ──────────────
-  const loadCheckpoint = useCallback(async () => {
+// Recebe os relatórios já filtrados por período e devolve toda a análise cruzada.
+function computeIdsAnalysis(reports) {
+  const round2 = (v) => Math.round((v + Number.EPSILON) * 100) / 100;
+  // Arredonda cada valor a centavos garantindo que a soma bata EXATAMENTE com o total
+  // (distribui o resíduo de arredondamento pelas maiores frações). Evita divergência
+  // de centavos entre a soma das linhas e o total exibido.
+  const roundToSum = (vals, target) => {
+    const cents = vals.map((v) => Math.round(v * 100));
+    const targetCents = Math.round(target * 100);
+    let diff = targetCents - cents.reduce((a, c) => a + c, 0);
+    if (diff !== 0 && vals.length > 0) {
+      const order = vals.map((v, i) => ({ i, frac: v * 100 - Math.floor(v * 100) }));
+      if (diff > 0) order.sort((a, b) => b.frac - a.frac);
+      else order.sort((a, b) => a.frac - b.frac);
+      const step = diff > 0 ? 1 : -1;
+      for (let k = 0; k < Math.abs(diff); k++) cents[order[k % order.length].i] += step;
+    }
+    return cents.map((c) => c / 100);
+  };
+  const boosts = new Map();
+  for (const r of reports) {
+    const confronto = r.welcome_boosts?.confronto || "Sem nome";
+    const mercado = r.welcome_boosts?.mercado || "";
+    const label = mercado ? `${confronto} · ${mercado}` : confronto;
+    const key = r.boost_id ?? r.id;
+    if (!boosts.has(key)) boosts.set(key, {
+      label, confronto, mercado, ids: new Set(), shared: new Set(),
+      stake: 0, ggr: 0,
+      welcomeDate: r.welcome_boosts?.created_at ?? null,
+      data_evento: r.welcome_boosts?.data_evento ?? null,
+    });
+    const b = boosts.get(key);
+    for (const pid of (r.player_ids ?? [])) { if (pid) b.ids.add(pid); }
+    b.stake += r.total_stake ?? 0;
+    b.ggr += r.ggr ?? 0;
+  }
+  for (const [, b] of boosts) {
+    b.avgStake = b.ids.size > 0 ? b.stake / b.ids.size : 0;
+    b.avgGGR = b.ids.size > 0 ? b.ggr / b.ids.size : 0;
+  }
+
+  const crossRef = new Map();
+  for (const [k, b] of boosts)
+    for (const pid of b.ids) { if (!crossRef.has(pid)) crossRef.set(pid, new Set()); crossRef.get(pid).add(k); }
+  for (const [pid, ks] of crossRef)
+    if (ks.size > 1) for (const k of ks) boosts.get(k)?.shared.add(pid);
+
+  let totalStake = 0, totalGGR = 0;
+  for (const [, b] of boosts) { totalStake += b.stake; totalGGR += b.ggr; }
+
+  const stats = [];
+  for (const [, b] of boosts) {
+    const total = b.ids.size, shared = b.shared.size;
+    stats.push({
+      label: b.label, confronto: b.confronto, mercado: b.mercado,
+      welcomeDate: b.welcomeDate,
+      total_ids: total, shared_ids: shared,
+      pct_shared: total > 0 ? Math.round((shared / total) * 100) : 0,
+      total_stake: b.stake, total_ggr: b.ggr, avg_stake: b.avgStake,
+    });
+  }
+  stats.sort((a, b) => (b.welcomeDate || "").localeCompare(a.welcomeDate || ""));
+
+  // pares de boosts
+  const pairCount = new Map();
+  for (const [, ks] of crossRef) {
+    if (ks.size < 2) continue;
+    const arr = [...ks];
+    for (let i = 0; i < arr.length; i++)
+      for (let j = i + 1; j < arr.length; j++) {
+        const pk = [arr[i], arr[j]].sort().join("|||");
+        pairCount.set(pk, (pairCount.get(pk) || 0) + 1);
+      }
+  }
+  const pairwise = [];
+  for (const [pk, shared] of pairCount) {
+    const [a, b] = pk.split("|||");
+    const bA = boosts.get(a), bB = boosts.get(b);
+    if (!bA || !bB) continue;
+    const affinity = Math.round((shared / Math.min(bA.ids.size, bB.ids.size)) * 100);
+    const sharedStake = shared * (bA.avgStake + bB.avgStake) / 2;
+    pairwise.push({
+      a: bA.label, b: bB.label, shared, affinity, shared_stake: sharedStake,
+      total_a: bA.ids.size, total_b: bB.ids.size,
+      pct_a: bA.ids.size ? Math.round((shared / bA.ids.size) * 100) : 0,
+      pct_b: bB.ids.size ? Math.round((shared / bB.ids.size) * 100) : 0,
+    });
+  }
+  pairwise.sort((x, y) => y.shared_stake - x.shared_stake);
+
+  // ── combinações EXATAS de welcomes ──────────────────────────────────────────
+  // Assinatura = o conjunto exato de boosts que o jogador pegou. É o nível mais
+  // granular do "Comparativo de Repetição": detalha cada faixa combinação por combinação.
+  const comboMap = new Map();
+  for (const [pid, ks] of crossRef) {
+    const arr = [...ks].sort();
+    const key = arr.join("|||");
+    if (!comboMap.has(key)) comboMap.set(key, { boostKeys: arr, count: 0, ids: [] });
+    const c = comboMap.get(key);
+    c.count++;
+    if (c.ids.length < 20000) c.ids.push(pid);
+  }
+  const rawCombos = [...comboMap.values()].map((c) => {
+    const avgStakeSum = c.boostKeys.reduce((s, k) => s + (boosts.get(k)?.avgStake ?? 0), 0);
+    const avgGGRSum = c.boostKeys.reduce((s, k) => s + (boosts.get(k)?.avgGGR ?? 0), 0);
+    return {
+      freq: c.boostKeys.length,
+      labels: c.boostKeys.map((k) => boosts.get(k)?.label ?? k),
+      confrontos: c.boostKeys.map((k) => boosts.get(k)?.confronto ?? k),
+      count: c.count, _stake: c.count * avgStakeSum, _ggr: c.count * avgGGRSum, ids: c.ids,
+    };
+  });
+
+  const totalStakeR = round2(totalStake), totalGGRR = round2(totalGGR);
+  // Arredonda no nível mais granular (combinação) preservando soma exata = totais reais.
+  // Assim: combinações somam às faixas, e faixas somam aos totais — tudo bate ao centavo.
+  const comboStakeAdj = roundToSum(rawCombos.map((c) => c._stake), totalStakeR);
+  const comboGGRAdj = roundToSum(rawCombos.map((c) => c._ggr), totalGGRR);
+  const combos = rawCombos.map((c, i) => ({
+    freq: c.freq, labels: c.labels, confrontos: c.confrontos, count: c.count, ids: c.ids,
+    stake_est: comboStakeAdj[i], ggr_est: comboGGRAdj[i],
+  })).sort((a, b) => a.freq - b.freq || b.count - a.count);
+
+  // faixas = agregação das combinações por nº de welcomes (consistente por construção)
+  const tierAgg = new Map();
+  for (const c of combos) {
+    if (!tierAgg.has(c.freq)) tierAgg.set(c.freq, { count: 0, stake: 0, ggr: 0 });
+    const t = tierAgg.get(c.freq);
+    t.count += c.count; t.stake += c.stake_est; t.ggr += c.ggr_est;
+  }
+  const tiers = [...tierAgg.entries()].map(([freq, t]) => ({
+    freq, count: t.count,
+    stake_est: round2(t.stake), ggr_est: round2(t.ggr),
+    avg_stake: round2(t.count > 0 ? t.stake / t.count : 0),
+    ids: combos.filter((c) => c.freq === freq).flatMap((c) => c.ids),
+  })).sort((a, b) => a.freq - b.freq);
+
+  const maxFreq = tiers.length ? tiers[tiers.length - 1].freq : 0;
+  const totalUnique = crossRef.size;
+  const totalRepeated = [...crossRef.values()].filter(s => s.size > 1).length;
+  // Participações somadas (Σ por welcome) — mesmo número de "Relatórios Gerais".
+  // Identidade: participações = distintos + repetições (entradas extras).
+  const totalParticipacoes = tiers.reduce((s, t) => s + t.freq * t.count, 0);
+  const extraEntries = totalParticipacoes - totalUnique;
+
+  // "dos repetidos" = soma exata das faixas 2+ (já reconciliadas com os totais).
+  const repTiers = tiers.filter(t => t.freq >= 2);
+  const stakeRepEst = round2(repTiers.reduce((acc, t) => acc + t.stake_est, 0));
+  const ggrRepEst = round2(repTiers.reduce((acc, t) => acc + t.ggr_est, 0));
+
+  return {
+    numBoosts: boosts.size, totalUnique, totalRepeated,
+    totalParticipacoes, extraEntries,
+    totalStake: totalStakeR, totalGGR: totalGGRR,
+    stakeRepEst, ggrRepEst,
+    stats, pairwise, tiers, combos, maxFreq,
+  };
+}
+
+function RepeatedIdsPage({ onBack }) {
+  const [phase, setPhase] = useState("loading"); // loading | ready | no_data | error
+  const [rawReports, setRawReports] = useState(null);
+  const [dateFrom, setDateFrom] = useState("");
+  const [dateTo, setDateTo] = useState("");
+
+  const fetchRaw = useCallback(async () => {
     setPhase("loading");
     try {
-      const rows = await api("GET", "app_settings?key=eq.ids_checkpoint&select=value");
-      const cached = rows?.[0]?.value ?? null;
-      const lastAt = cached?.last_report_created_at ?? "1970-01-01T00:00:00Z";
-
-      const newer = await api(
-        "GET",
-        `boost_relatorios?select=id&player_ids=not.is.null&created_at=gt.${encodeURIComponent(lastAt)}`
-      );
-      const delta = (newer || []).length;
-
-      if (cached && delta === 0) {
-        setCk(cached);
-        setNewCount(0);
-        setPhase("ready");
-      } else if (cached && delta > 0) {
-        setCk(cached);
-        setNewCount(delta);
-        setPhase("stale");
-      } else {
-        // Sem checkpoint ainda — verifica se já existem dados para processar
-        const sample = await api(
-          "GET",
-          "boost_relatorios?select=id&player_ids=not.is.null&limit=1"
-        );
-        setPhase(sample?.length ? "no_data" : "no_data");
-        setNewCount(delta);
-      }
-    } catch (e) {
-      console.error(e);
-      setPhase("error");
-    }
-  }, []);
-
-  useEffect(() => { loadCheckpoint(); }, [loadCheckpoint]);
-
-  // ── 2. Processa todos os relatórios e salva o checkpoint ─────────────────
-  const runAnalysis = useCallback(async () => {
-    setPhase("computing");
-    try {
-      const reports = await api(
-        "GET",
-        "boost_relatorios?select=id,player_ids,created_at,welcome_boosts(confronto,data_evento)&player_ids=not.is.null&order=created_at.asc"
-      );
-
-      if (!reports || reports.length === 0) {
-        setPhase("no_data");
-        return;
-      }
-
-      // crossRef: player_id → Set de confronto strings
-      const crossRef = new Map();
-      // confrontoMap: confronto → { totalIds: Set, sharedIds: Set, data_evento }
-      const confrontoMap = new Map();
-      let lastCreatedAt = "";
-
-      for (const r of reports) {
-        const confronto = r.welcome_boosts?.confronto || "Sem nome";
-        const ids = Array.isArray(r.player_ids) ? r.player_ids : [];
-        if (!confrontoMap.has(confronto)) {
-          confrontoMap.set(confronto, {
-            totalIds: new Set(),
-            sharedIds: new Set(),
-            data_evento: r.welcome_boosts?.data_evento ?? null,
-          });
-        }
-        const cMeta = confrontoMap.get(confronto);
-        for (const pid of ids) {
-          if (!pid) continue;
-          cMeta.totalIds.add(pid);
-          if (!crossRef.has(pid)) crossRef.set(pid, new Set());
-          crossRef.get(pid).add(confronto);
-        }
-        if (r.created_at > lastCreatedAt) lastCreatedAt = r.created_at;
-      }
-
-      // Marca shared por confronto
-      for (const [pid, confrontos] of crossRef.entries()) {
-        if (confrontos.size > 1) {
-          for (const c of confrontos) confrontoMap.get(c)?.sharedIds.add(pid);
-        }
-      }
-
-      // Lista de IDs repetidos
-      const repeated = [];
-      for (const [pid, confrontos] of crossRef.entries()) {
-        if (confrontos.size > 1) repeated.push({ id: pid, count: confrontos.size, confrontos: [...confrontos] });
-      }
-      repeated.sort((a, b) => b.count - a.count);
-
-      // Stats por confronto
-      const confrontoStats = [];
-      for (const [confronto, meta] of confrontoMap.entries()) {
-        confrontoStats.push({
-          confronto,
-          total_ids: meta.totalIds.size,
-          shared_ids: meta.sharedIds.size,
-          data_evento: meta.data_evento,
-        });
-      }
-      confrontoStats.sort((a, b) => b.shared_ids - a.shared_ids);
-
-      const newCk = {
-        computed_at: new Date().toISOString(),
-        last_report_created_at: lastCreatedAt,
-        total_reports_processed: reports.length,
-        total_unique_ids: crossRef.size,
-        total_repeated_ids: repeated.length,
-        repeated: repeated.slice(0, 10000),
-        confronto_stats: confrontoStats,
-      };
-
-      // Upsert no banco
-      await api(
-        "POST",
-        "app_settings",
-        { key: "ids_checkpoint", value: newCk, updated_at: new Date().toISOString() },
-        { Prefer: "resolution=merge-duplicates,return=representation" }
-      );
-
-      setCk(newCk);
-      setNewCount(0);
-      setDetailLimit(100);
+      const reports = await api("GET",
+        "boost_relatorios?select=id,boost_id,player_ids,total_stake,ggr,created_at,welcome_boosts(confronto,data_evento,mercado,created_at)&player_ids=not.is.null&order=created_at.desc");
+      if (!reports?.length) { setRawReports([]); setPhase("no_data"); return; }
+      // Mantém apenas o relatório MAIS RECENTE de cada boost (vem ordenado por created_at desc).
+      // Evita somar stake/ggr em duplicidade quando uma boost teve o relatório salvo mais de uma vez
+      // e garante consistência com "Relatórios Gerais" (que também usa o último por boost).
+      const latest = {};
+      for (const r of reports) { const k = r.boost_id ?? r.id; if (!latest[k]) latest[k] = r; }
+      setRawReports(Object.values(latest));
       setPhase("ready");
-    } catch (e) {
-      console.error(e);
-      setPhase("error");
-    }
+    } catch (e) { console.error(e); setPhase("error"); }
   }, []);
 
-  // ── Download CSV dos IDs repetidos ───────────────────────────────────────
-  const downloadRepeated = () => {
-    if (!ck?.repeated?.length) return;
-    const lines = ["ID;Aparece em (qtd);Confrontos"];
-    for (const item of ck.repeated) {
-      lines.push(`${item.id};${item.count};"${item.confrontos.join(" | ")}"`);
+  useEffect(() => { fetchRaw(); }, [fetchRaw]);
+
+  // filtro por data/hora da welcome
+  const filtered = useMemo(() => {
+    if (!rawReports) return null;
+    const from = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
+    const to = dateTo ? new Date(dateTo + "T23:59:59") : null;
+    return rawReports.filter(r => {
+      const ds = r.welcome_boosts?.created_at;
+      if (!ds) return true;
+      const d = new Date(ds);
+      if (from && d < from) return false;
+      if (to && d > to) return false;
+      return true;
+    });
+  }, [rawReports, dateFrom, dateTo]);
+
+  const a = useMemo(() => filtered ? computeIdsAnalysis(filtered) : null, [filtered]);
+
+  // welcomes dentro do período
+  const welcomesInRange = useMemo(() => {
+    if (!filtered) return [];
+    const seen = new Map();
+    for (const r of filtered) {
+      const key = r.boost_id ?? r.id;
+      if (!seen.has(key)) {
+        const c = r.welcome_boosts?.confronto || "Sem nome";
+        const m = r.welcome_boosts?.mercado || "";
+        seen.set(key, { label: m ? `${c} · ${m}` : c, date: r.welcome_boosts?.created_at });
+      }
     }
+    return [...seen.values()].sort((x, y) => (y.date || "").localeCompare(x.date || ""));
+  }, [filtered]);
+
+  const downloadTierIds = (tier) => {
+    if (!tier?.ids?.length) return;
+    const lines = ["ID do Jogador", ...tier.ids.map(String)];
     const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
-    const a = document.createElement("a");
-    a.href = url; a.download = "ids_repetidos.csv"; a.click();
+    const el = document.createElement("a");
+    el.href = url; el.download = `ids_${tier.freq}_welcomes.csv`; el.click();
     URL.revokeObjectURL(url);
   };
 
-  // ── Helpers de formatação ────────────────────────────────────────────────
-  const pct = (n, total) => total > 0 ? ((n / total) * 100).toFixed(1) + "%" : "—";
-  const topConfronto = ck?.confronto_stats?.[0]?.confronto ?? "—";
+  const pct = (n, d) => d > 0 ? ((n / d) * 100).toFixed(1) + "%" : "0%";
 
-  // ── Render ───────────────────────────────────────────────────────────────
+  // gráfico interativo de sobreposições (pares de welcomes)
+  const [pairMetric, setPairMetric] = useState("shared_stake"); // shared_stake | shared | affinity
+  const [hoverPair, setHoverPair] = useState(null);
+  const metricGet = (key) => key === "shared" ? (p => p.shared) : key === "affinity" ? (p => p.affinity) : (p => p.shared_stake);
+  const metricFmt = (key, v) => key === "shared" ? v.toLocaleString("pt-BR") : key === "affinity" ? v + "%" : fmtR(v);
+  const sortedPairs = useMemo(() => {
+    if (!a?.pairwise) return [];
+    const g = metricGet(pairMetric);
+    return [...a.pairwise].sort((x, y) => g(y) - g(x));
+  }, [a, pairMetric]);
+  const maxPairVal = useMemo(() => {
+    const g = metricGet(pairMetric);
+    return Math.max(1, ...sortedPairs.map(g));
+  }, [sortedPairs, pairMetric]);
+
+  // gráfico interativo do "Comparativo de Repetição" detalhado (combinação por combinação)
+  const [comboMetric, setComboMetric] = useState("count"); // count | stake_est | ggr_est
+  const [comboMinFreq, setComboMinFreq] = useState(2);      // 1 = inclui exclusivos, 2 = só repetidos
+  const [hoverCombo, setHoverCombo] = useState(null);
+  const comboGet = (key) => key === "stake_est" ? (c => c.stake_est) : key === "ggr_est" ? (c => Math.abs(c.ggr_est)) : (c => c.count);
+  const comboFmt = (key, c) => {
+    if (key === "stake_est") return fmtR(c.stake_est);
+    if (key === "ggr_est") return (c.ggr_est < 0 ? "-" : "") + fmtR(Math.abs(c.ggr_est));
+    return c.count.toLocaleString("pt-BR");
+  };
+  const shownCombos = useMemo(() => {
+    if (!a?.combos) return [];
+    const g = comboGet(comboMetric);
+    return a.combos.filter(c => c.freq >= comboMinFreq).sort((x, y) => g(y) - g(x));
+  }, [a, comboMetric, comboMinFreq]);
+  const maxComboVal = useMemo(() => {
+    const g = comboGet(comboMetric);
+    return Math.max(1, ...shownCombos.map(g));
+  }, [shownCombos, comboMetric]);
+  const downloadComboIds = (c) => {
+    if (!c?.ids?.length) return;
+    const lines = ["ID do Jogador", ...c.ids.map(String)];
+    const blob = new Blob([lines.join("\n")], { type: "text/csv;charset=utf-8;" });
+    const url = URL.createObjectURL(blob);
+    const el = document.createElement("a");
+    el.href = url; el.download = `ids_combo_${c.confrontos.join("_").replace(/[^a-zA-Z0-9_-]+/g, "_").slice(0, 60)}.csv`; el.click();
+    URL.revokeObjectURL(url);
+  };
+
+  const sec = { background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r-lg)", marginBottom: 24, overflow: "hidden", boxShadow: "var(--shadow)" };
+  const secHead = { fontSize: 12, fontWeight: 700, color: "var(--t2)", textTransform: "uppercase", letterSpacing: "0.1em", padding: "13px 20px", borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 10, background: "var(--surface-2)" };
+
+  const repeatedTiers = a ? a.tiers.filter(t => t.freq >= 2).sort((x, y) => y.freq - x.freq) : [];
+  const topTier = repeatedTiers.find(t => t.freq === a?.maxFreq && a?.maxFreq > 1);
+
+  const tierLabel = (freq) => {
+    if (!a) return `${freq} welcomes`;
+    if (freq === 1) return "1 welcome (exclusivos)";
+    if (freq === a.numBoosts) return `Todas as ${freq} welcomes`;
+    return `${freq} welcomes`;
+  };
+
   return (
     <div style={S.reportPage}>
       <div style={S.reportHeader} className="report-header">
         <button style={S.btnBack} onClick={onBack}><IconArrow left /> Voltar</button>
         <div>
           <div style={{ fontSize: 15, fontWeight: 700 }}>IDs Repetidos</div>
-          <div style={{ fontSize: 11, color: "var(--t3)" }}>Cruzamento de jogadores entre Welcome Boosts</div>
+          <div style={{ fontSize: 11, color: "var(--t3)" }}>Quem pegou várias welcomes e quanto de prejuízo gerou</div>
         </div>
       </div>
-
       <div style={S.reportContent} className="report-content">
 
-        {/* ── Barra de status / controle ── */}
-        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", flexWrap: "wrap", gap: 12, marginBottom: 24, padding: "14px 18px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r-md)" }}>
-          <div style={{ fontSize: 12.5, color: "var(--t2)" }}>
-            {phase === "loading" && "Verificando checkpoint..."}
-            {phase === "computing" && <span style={{ color: "var(--info)", fontWeight: 600 }}>⏳ Processando relatórios…</span>}
-            {phase === "no_data" && "Nenhum relatório com IDs encontrado. Gere e salve novos relatórios."}
-            {phase === "error" && <span style={{ color: "var(--down)" }}>Erro ao carregar. Tente novamente.</span>}
-            {(phase === "ready" || phase === "stale") && ck && (
-              <span>
-                Última análise: <strong>{fmtDate(ck.computed_at)}</strong>
-                {" · "}{ck.total_reports_processed} relatório{ck.total_reports_processed !== 1 ? "s" : ""} processado{ck.total_reports_processed !== 1 ? "s" : ""}
-                {phase === "stale" && <span style={{ marginLeft: 10, color: "var(--warn)", fontWeight: 600 }}>· {newCount} novo{newCount !== 1 ? "s" : ""} desde então</span>}
-              </span>
-            )}
-          </div>
-          <div style={{ display: "flex", gap: 8 }}>
-            {(phase === "ready" || phase === "stale" || phase === "no_data") && (
-              <button
-                style={{ ...S.btnSecondary, padding: "8px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 7 }}
-                onClick={runAnalysis}
-                disabled={phase === "computing"}
-              >
-                <IconChart /> {phase === "stale" ? `Atualizar (${newCount} novo${newCount !== 1 ? "s" : ""})` : "Rodar análise"}
-              </button>
-            )}
-            {phase === "ready" && ck?.repeated?.length > 0 && (
-              <button
-                style={{ ...S.btnSecondary, padding: "8px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 7 }}
-                onClick={downloadRepeated}
-              >
-                <IconDownload /> Baixar CSV
-              </button>
-            )}
-          </div>
+        {/* Filtro por data/hora da welcome */}
+        <div style={S.filterBar} className="filter-bar">
+          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período (data da welcome):</div>
+          <input type="date" style={S.input} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
+          <span style={{ color: "var(--t3)", fontSize: 13 }}>até</span>
+          <input type="date" style={S.input} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
+          {(dateFrom || dateTo) && (
+            <button style={{ ...S.btnDelete, padding: "8px 14px", fontSize: 12 }} onClick={() => { setDateFrom(""); setDateTo(""); }}>Limpar</button>
+          )}
+          <button style={{ ...S.btnSecondary, padding: "8px 14px", fontSize: 12, marginLeft: "auto", display: "flex", alignItems: "center", gap: 7 }} onClick={fetchRaw} disabled={phase === "loading"}>
+            <IconChart /> Atualizar dados
+          </button>
         </div>
 
-        {/* ── KPI cards ── */}
-        {(phase === "ready" || phase === "stale") && ck && (
-          <>
-            <div style={{ ...S.statsGrid, marginBottom: 28 }} className="stats-grid">
-              {[
-                { label: "IDs Únicos processados",  value: ck.total_unique_ids.toLocaleString("pt-BR"),  color: "var(--info)",  sub: `em ${ck.total_reports_processed} relatórios` },
-                { label: "IDs Repetidos",            value: ck.total_repeated_ids.toLocaleString("pt-BR"), color: "var(--down)",  sub: "aparecem em 2+ confrontos" },
-                { label: "Taxa de repetição",        value: pct(ck.total_repeated_ids, ck.total_unique_ids), color: "var(--warn)",  sub: "do total de IDs únicos" },
-                { label: "Confronto mais repetido",  value: topConfronto, color: "var(--t1)", sub: `${ck.confronto_stats?.[0]?.shared_ids ?? 0} IDs compartilhados` },
-              ].map((s) => (
-                <div key={s.label} style={S.statCard}>
-                  <div style={S.statCardTop}>
-                    <div style={S.statLabel}>{s.label}</div>
-                    <div style={S.statIconWrap(s.color)}><IconUser /></div>
-                  </div>
-                  <div style={{ ...S.statValue, color: s.color, fontSize: s.label === "Confronto mais repetido" ? 14 : 22 }}>{s.value}</div>
-                  <div style={S.statSub}>{s.sub}</div>
-                </div>
+        {phase === "loading" && <div style={{ textAlign: "center", padding: 80, color: "var(--t3)", fontSize: 14 }}>Carregando relatórios...</div>}
+        {phase === "error" && <div style={S.empty}><div style={S.emptyTitle}>Erro ao carregar</div><div style={{ fontSize: 13, color: "var(--t3)" }}>Tente "Atualizar dados".</div></div>}
+        {phase === "no_data" && <div style={S.empty}><div style={S.emptyTitle}>Nenhum dado disponível</div><div style={{ fontSize: 13, color: "var(--t3)" }}>Gere e salve relatórios para que os IDs sejam cruzados aqui.</div></div>}
+
+        {phase === "ready" && a && a.numBoosts === 0 && (
+          <div style={S.empty}><div style={S.emptyTitle}>Nenhuma welcome no período</div><div style={{ fontSize: 13, color: "var(--t3)" }}>Ajuste o filtro de datas acima.</div></div>
+        )}
+
+        {phase === "ready" && a && a.numBoosts > 0 && (<>
+
+          {/* welcomes comparadas */}
+          <div style={{ marginBottom: 24, padding: "14px 18px", background: "var(--surface)", border: "1px solid var(--line)", borderRadius: "var(--r-md)" }}>
+            <div style={{ fontSize: 11, fontWeight: 700, color: "var(--t3)", textTransform: "uppercase", letterSpacing: "0.08em", marginBottom: 10 }}>
+              {a.numBoosts} welcome{a.numBoosts !== 1 ? "s" : ""} comparada{a.numBoosts !== 1 ? "s" : ""} no período
+            </div>
+            <div style={{ display: "flex", flexWrap: "wrap", gap: 7 }}>
+              {welcomesInRange.map((w, i) => (
+                <span key={i} style={{ display: "inline-flex", alignItems: "center", gap: 6, padding: "4px 10px", borderRadius: 99, background: "var(--surface-2)", border: "1px solid var(--line)", fontSize: 11.5, color: "var(--t2)" }}>
+                  {w.label}
+                  {w.date && <span style={{ color: "var(--t3)", fontSize: 10 }}>· {fmtDate(w.date)}</span>}
+                </span>
               ))}
             </div>
-
-            {/* ── Comparativo por confronto ── */}
-            {ck.confronto_stats?.length > 0 && (
-              <div style={{ ...S.tableWrap, marginBottom: 28 }} className="table-wrap">
-                <div style={S.tableHeader}>Comparativo por confronto</div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={S.table}>
-                    <thead>
-                      <tr>
-                        {["Confronto", "Total de IDs", "IDs em outros confrontos", "% compartilhado"].map((h) => (
-                          <th key={h} style={S.th}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ck.confronto_stats.map((row) => (
-                        <tr key={row.confronto}>
-                          <td style={{ ...S.td, fontWeight: 600, color: "var(--t1)" }}>{row.confronto}</td>
-                          <td style={{ ...S.td, fontFamily: "var(--mono)" }}>{row.total_ids.toLocaleString("pt-BR")}</td>
-                          <td style={{ ...S.td, fontFamily: "var(--mono)", color: row.shared_ids > 0 ? "var(--down)" : "var(--t3)", fontWeight: row.shared_ids > 0 ? 700 : 400 }}>
-                            {row.shared_ids.toLocaleString("pt-BR")}
-                          </td>
-                          <td style={{ ...S.td, fontFamily: "var(--mono)", color: row.shared_ids > 0 ? "var(--warn)" : "var(--t3)" }}>
-                            {pct(row.shared_ids, row.total_ids)}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-              </div>
-            )}
-
-            {/* ── Detalhe dos IDs repetidos ── */}
-            {ck.repeated?.length > 0 ? (
-              <div style={S.tableWrap} className="table-wrap">
-                <div style={S.tableHeader}>IDs repetidos — detalhe ({ck.repeated.length})</div>
-                <div style={{ overflowX: "auto" }}>
-                  <table style={S.table}>
-                    <thead>
-                      <tr>
-                        {["ID do Jogador (Player)", "Aparece em", "Confrontos"].map((h) => (
-                          <th key={h} style={S.th}>{h}</th>
-                        ))}
-                      </tr>
-                    </thead>
-                    <tbody>
-                      {ck.repeated.slice(0, detailLimit).map((item) => (
-                        <tr key={item.id}>
-                          <td style={{ ...S.td, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--t1)" }}>{item.id}</td>
-                          <td style={{ ...S.td, color: "var(--down)", fontWeight: 600, fontFamily: "var(--mono)" }}>{item.count}×</td>
-                          <td style={{ ...S.td, color: "var(--t2)" }}>
-                            {item.confrontos.map((c, i) => (
-                              <span key={i} style={{ display: "inline-block", marginRight: 8 }}>
-                                {c}{i < item.confrontos.length - 1 ? " ·" : ""}
-                              </span>
-                            ))}
-                          </td>
-                        </tr>
-                      ))}
-                    </tbody>
-                  </table>
-                </div>
-                {ck.repeated.length > detailLimit && (
-                  <div style={{ padding: "14px 20px", textAlign: "center", borderTop: "1px solid var(--line)" }}>
-                    <button
-                      style={{ ...S.btnSecondary, padding: "8px 18px", fontSize: 12 }}
-                      onClick={() => setDetailLimit((n) => n + 100)}
-                    >
-                      Carregar mais ({ck.repeated.length - detailLimit} restantes)
-                    </button>
-                  </div>
-                )}
-              </div>
-            ) : (
-              <div style={S.empty}>
-                <div style={S.emptyTitle}>Nenhum ID repetido encontrado</div>
-                <div style={{ fontSize: 13, color: "var(--t3)" }}>Nenhum jogador aparece em mais de um relatório salvo até o momento</div>
-              </div>
-            )}
-          </>
-        )}
-
-        {(phase === "loading" || phase === "computing") && (
-          <div style={{ textAlign: "center", padding: 80, color: "var(--t3)", fontSize: 14 }}>
-            {phase === "computing" ? "Processando todos os relatórios, aguarde…" : "Carregando…"}
           </div>
-        )}
 
-        {phase === "no_data" && (
-          <div style={S.empty}>
-            <div style={S.emptyTitle}>Nenhum dado de IDs disponível ainda</div>
-            <div style={{ fontSize: 13, color: "var(--t3)", maxWidth: 460, margin: "0 auto" }}>
-              Gere e salve novos relatórios (com arquivos xlsx) para que os IDs comecem a ser registrados e cruzados aqui.
+          {/* Reconciliação com "Relatórios Gerais" */}
+          <div style={{ marginBottom: 24, padding: "14px 18px", background: "var(--info-soft)", border: "1px solid var(--info)", borderRadius: "var(--r-md)", display: "flex", alignItems: "center", gap: 14, flexWrap: "wrap" }}>
+            <div style={{ fontSize: 20, lineHeight: 1, flexShrink: 0 }}>🧮</div>
+            <div style={{ fontSize: 12.5, color: "var(--t2)", lineHeight: 1.5 }}>
+              <strong style={{ color: "var(--t1)" }}>{a.totalParticipacoes.toLocaleString("pt-BR")} participações</strong> somando todas as welcomes
+              <span style={{ color: "var(--t3)" }}> (é o número de "Relatórios Gerais")</span>
+              {" − "}
+              <strong style={{ color: "var(--warn)" }}>{a.extraEntries.toLocaleString("pt-BR")} repetições</strong>
+              {" = "}
+              <strong style={{ color: "var(--info)" }}>{a.totalUnique.toLocaleString("pt-BR")} jogadores distintos</strong>.
+              <span style={{ color: "var(--t3)" }}> Um jogador em várias welcomes conta 1× aqui, mas é somado em Relatórios Gerais.</span>
             </div>
           </div>
-        )}
+
+          {/* KPIs */}
+          <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(186px, 1fr))", gap: 14, marginBottom: 28 }}>
+            <div style={S.statCard}>
+              <div style={S.statCardTop}><div style={S.statLabel}>Jogadores Distintos</div><div style={S.statIconWrap("var(--info)")}><IconUser /></div></div>
+              <div style={{ ...S.statValue, color: "var(--info)" }}>{a.totalUnique.toLocaleString("pt-BR")}</div>
+              <div style={S.statSub}>cada um conta 1× · {a.totalParticipacoes.toLocaleString("pt-BR")} participações</div>
+            </div>
+            <div style={S.statCard}>
+              <div style={S.statCardTop}><div style={S.statLabel}>Pegaram 2+ Welcomes</div><div style={S.statIconWrap("var(--warn)")}><IconChart /></div></div>
+              <div style={{ ...S.statValue, color: "var(--warn)" }}>{a.totalRepeated.toLocaleString("pt-BR")}</div>
+              <div style={S.statSub}>{pct(a.totalRepeated, a.totalUnique)} dos apostadores</div>
+            </div>
+            <div style={S.statCard}>
+              <div style={S.statCardTop}><div style={S.statLabel}>Stake Total</div><div style={S.statIconWrap("var(--t2)")}><IconCoin /></div></div>
+              <div style={{ ...S.statValue, color: "var(--t1)", fontSize: 18 }}>{fmtR(a.totalStake)}</div>
+              <div style={S.statSub}>~{fmtR(a.stakeRepEst)} dos repetidos</div>
+            </div>
+            <div style={S.statCard}>
+              <div style={S.statCardTop}><div style={S.statLabel}>GGR Total</div><div style={S.statIconWrap(a.totalGGR >= 0 ? "var(--up)" : "var(--down)")}><IconTrophy /></div></div>
+              <div style={{ ...S.statValue, fontSize: 18, color: a.totalGGR >= 0 ? "var(--up)" : "var(--down)" }}>{fmtR(a.totalGGR)}</div>
+              <div style={S.statSub}>~{fmtR(a.ggrRepEst)} vindo dos repetidos</div>
+            </div>
+            <div style={S.statCard}>
+              <div style={S.statCardTop}><div style={S.statLabel}>Resultado dos Repetidos</div><div style={S.statIconWrap(a.ggrRepEst >= 0 ? "var(--up)" : "var(--down)")}><IconHistory /></div></div>
+              <div style={{ ...S.statValue, fontSize: 18, color: a.ggrRepEst >= 0 ? "var(--up)" : "var(--down)" }}>{a.ggrRepEst >= 0 ? fmtR(a.ggrRepEst) : "-" + fmtR(Math.abs(a.ggrRepEst))}</div>
+              <div style={S.statSub}>{a.ggrRepEst >= 0 ? "lucro estimado" : "prejuízo estimado"}</div>
+            </div>
+          </div>
+
+          {/* Destaque: top tier */}
+          {topTier && (
+            <div style={{ marginBottom: 24, padding: "20px 22px", borderRadius: "var(--r-lg)", border: `1px solid ${topTier.ggr_est < 0 ? "var(--down)" : "var(--up)"}`, background: topTier.ggr_est < 0 ? "var(--down-soft)" : "var(--up-soft)", display: "flex", alignItems: "center", gap: 18, flexWrap: "wrap" }}>
+              <div style={{ fontSize: 34, lineHeight: 1 }}>{topTier.ggr_est < 0 ? "⚠️" : "🏆"}</div>
+              <div style={{ flex: 1, minWidth: 240 }}>
+                <div style={{ fontSize: 14.5, fontWeight: 700, color: "var(--t1)" }}>
+                  {topTier.count.toLocaleString("pt-BR")} jogador{topTier.count !== 1 ? "es" : ""} {topTier.count !== 1 ? "pegaram" : "pegou"} {a.maxFreq === a.numBoosts ? `as ${a.maxFreq} welcomes (todas)` : `${a.maxFreq} de ${a.numBoosts} welcomes (o máximo)`} do período
+                </div>
+                <div style={{ fontSize: 12.5, color: "var(--t2)", marginTop: 3 }}>
+                  Stake estimado de {fmtR(topTier.stake_est)} ·{" "}
+                  {topTier.ggr_est < 0
+                    ? <span style={{ color: "var(--down)", fontWeight: 700 }}>prejuízo estimado de {fmtR(Math.abs(topTier.ggr_est))}</span>
+                    : <span style={{ color: "var(--up)", fontWeight: 700 }}>GGR estimado de {fmtR(topTier.ggr_est)}</span>}
+                </div>
+              </div>
+              <button style={{ ...S.btnSecondary, padding: "9px 16px", fontSize: 12, display: "flex", alignItems: "center", gap: 7 }} onClick={() => downloadTierIds(topTier)}>
+                <IconDownload /> Baixar {topTier.count} IDs
+              </button>
+            </div>
+          )}
+
+          {/* Comparativo por faixa de repetição */}
+          <div style={sec}>
+            <div style={secHead}>
+              <span>Comparativo de Repetição</span>
+              <span style={{ fontSize: 10.5, fontWeight: 400, color: "var(--t3)", textTransform: "none" }}>quantos IDs pegaram N welcomes e o resultado gerado</span>
+            </div>
+            <div style={{ overflowX: "auto" }} className="table-wrap">
+              <table style={S.table}>
+                <thead><tr>
+                  {["Participação", "Jogadores", "%", "Stake estimado", "Resultado estimado", ""].map(h => <th key={h} style={{ ...S.th, padding: "9px 11px", whiteSpace: "nowrap" }}>{h}</th>)}
+                </tr></thead>
+                <tbody>
+                  {[...a.tiers].sort((x, y) => y.freq - x.freq).map(t => {
+                    const isRep = t.freq >= 2;
+                    const isTop = t.freq === a.maxFreq && a.maxFreq > 1;
+                    const accent = !isRep ? "var(--t3)" : isTop ? "var(--down)" : t.freq >= 3 ? "var(--warn)" : "var(--info)";
+                    const cell = { ...S.td, padding: "9px 11px" };
+                    return (
+                      <tr key={t.freq} style={{ background: isTop ? "var(--down-soft)" : "transparent" }}>
+                        <td style={cell}>
+                          <span style={{ fontWeight: isRep ? 700 : 500, color: accent }}>{tierLabel(t.freq)}</span>
+                        </td>
+                        <td style={{ ...cell, fontFamily: "var(--mono)", fontWeight: 700, color: "var(--t1)", whiteSpace: "nowrap" }}>{t.count.toLocaleString("pt-BR")}</td>
+                        <td style={{ ...cell, fontFamily: "var(--mono)", color: "var(--t3)", whiteSpace: "nowrap" }}>{pct(t.count, a.totalUnique)}</td>
+                        <td style={{ ...cell, fontFamily: "var(--mono)", whiteSpace: "nowrap" }}>{fmtR(t.stake_est)}</td>
+                        <td style={{ ...cell, fontFamily: "var(--mono)", fontWeight: 700, whiteSpace: "nowrap", color: t.ggr_est >= 0 ? "var(--up)" : "var(--down)" }}>
+                          {t.ggr_est >= 0 ? fmtR(t.ggr_est) : "-" + fmtR(Math.abs(t.ggr_est))}
+                          {t.ggr_est < 0 && <span style={{ fontSize: 10, fontWeight: 400, marginLeft: 5, color: "var(--down)" }}>prej.</span>}
+                        </td>
+                        <td style={cell}>
+                          {isRep && t.ids.length > 0 && (
+                            <button style={{ ...S.btnSecondary, padding: "5px 10px", fontSize: 11, display: "inline-flex", alignItems: "center", gap: 6 }} onClick={() => downloadTierIds(t)}>
+                              <IconDownload /> IDs
+                            </button>
+                          )}
+                        </td>
+                      </tr>
+                    );
+                  })}
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          {/* Comparativo Detalhado — combinação por combinação (visualização em barras) */}
+          {shownCombos.length > 0 && (
+            <div style={sec}>
+              <div style={secHead}>
+                <span>Comparativo Detalhado — Combinação por Combinação</span>
+                <div style={{ display: "flex", gap: 8, flexWrap: "wrap" }}>
+                  <button onClick={() => setComboMinFreq(comboMinFreq === 2 ? 1 : 2)}
+                    style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, borderRadius: 8, cursor: "pointer", textTransform: "none", letterSpacing: 0, border: "1px solid var(--line)", background: comboMinFreq === 1 ? "var(--acc)" : "var(--surface)", color: comboMinFreq === 1 ? "#fff" : "var(--t2)" }}>
+                    {comboMinFreq === 1 ? "✓ " : ""}Incluir exclusivos
+                  </button>
+                  <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+                    {[["count", "Jogadores"], ["stake_est", "Stake"], ["ggr_est", "Resultado"]].map(([k, lbl], idx) => (
+                      <button key={k} onClick={() => setComboMetric(k)}
+                        style={{ padding: "6px 12px", fontSize: 11, fontWeight: 700, border: "none", borderLeft: idx > 0 ? "1px solid var(--line)" : "none", cursor: "pointer", textTransform: "none", letterSpacing: 0, background: comboMetric === k ? "var(--acc)" : "var(--surface)", color: comboMetric === k ? "#fff" : "var(--t2)" }}>
+                        {lbl}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              </div>
+              <div>
+                {[...new Set(shownCombos.map(c => c.freq))].sort((x, y) => y - x).map((freq) => {
+                  const group = shownCombos.filter(c => c.freq === freq);
+                  const tier = a.tiers.find(t => t.freq === freq);
+                  const groupLabel = freq === 1 ? "Pegaram 1 welcome (exclusivos)" : freq === a.numBoosts ? `Pegaram TODAS as ${freq} welcomes` : `Pegaram ${freq} welcomes`;
+                  const tierColor = freq === a.maxFreq && a.maxFreq > 1 ? "var(--down)" : freq >= 3 ? "var(--warn)" : freq === 2 ? "var(--info)" : "var(--t3)";
+                  return (
+                    <div key={freq}>
+                      <div style={{ padding: "10px 20px", background: "var(--surface-2)", borderTop: "1px solid var(--line)", borderBottom: "1px solid var(--line)", display: "flex", justifyContent: "space-between", alignItems: "baseline", flexWrap: "wrap", gap: 8 }}>
+                        <span style={{ fontSize: 12, fontWeight: 700, color: tierColor }}>{groupLabel}</span>
+                        <span style={{ fontSize: 11, color: "var(--t3)", fontFamily: "var(--mono)" }}>
+                          {tier?.count.toLocaleString("pt-BR")} jogadores · {fmtR(tier?.stake_est ?? 0)} · <span style={{ color: (tier?.ggr_est ?? 0) < 0 ? "var(--down)" : "var(--up)" }}>{(tier?.ggr_est ?? 0) < 0 ? "-" : ""}{fmtR(Math.abs(tier?.ggr_est ?? 0))}</span>
+                        </span>
+                      </div>
+                      {group.map((c, gi) => {
+                        const val = comboGet(comboMetric)(c);
+                        const w = Math.max(2, Math.round((val / maxComboVal) * 100));
+                        const key = `${freq}-${c.labels.join("|")}`;
+                        const active = hoverCombo === key;
+                        const barColor = comboMetric === "ggr_est" ? (c.ggr_est < 0 ? "var(--down)" : "var(--up)") : tierColor;
+                        return (
+                          <div key={key}
+                            onMouseEnter={() => setHoverCombo(key)} onMouseLeave={() => setHoverCombo(null)}
+                            onClick={() => setHoverCombo(active ? null : key)}
+                            style={{ padding: "11px 20px", cursor: "pointer", background: active ? "var(--surface-2)" : "transparent", borderBottom: "1px solid var(--line)", transition: "background .15s" }}>
+                            <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 14, marginBottom: 7 }}>
+                              <div style={{ fontSize: 12.5, color: "var(--t1)", fontWeight: 600, lineHeight: 1.4, wordBreak: "break-word" }}>
+                                {c.labels.map((lb, li) => (
+                                  <span key={li}>{li > 0 && <span style={{ color: "var(--t3)", margin: "0 7px", fontWeight: 400 }}>+</span>}{lb}</span>
+                                ))}
+                              </div>
+                              <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: barColor, fontSize: 13, whiteSpace: "nowrap", flexShrink: 0 }}>{comboFmt(comboMetric, c)}</div>
+                            </div>
+                            <div style={{ background: "var(--surface-2)", borderRadius: 6, height: 18, overflow: "hidden" }}>
+                              <div style={{ width: `${w}%`, height: "100%", background: barColor, opacity: active ? 1 : 0.82, borderRadius: 6, transition: "width .35s ease, opacity .15s" }} />
+                            </div>
+                            {active && (
+                              <div style={{ marginTop: 9, display: "flex", gap: "6px 18px", fontSize: 11.5, color: "var(--t3)", flexWrap: "wrap", alignItems: "center" }}>
+                                <span><strong style={{ color: "var(--t2)" }}>{c.count.toLocaleString("pt-BR")}</strong> jogadores ({pct(c.count, a.totalUnique)})</span>
+                                <span>Stake estimado: <strong style={{ color: "var(--t2)" }}>{fmtR(c.stake_est)}</strong></span>
+                                <span>Resultado: <strong style={{ color: c.ggr_est < 0 ? "var(--down)" : "var(--up)" }}>{c.ggr_est < 0 ? "-" : ""}{fmtR(Math.abs(c.ggr_est))}</strong>{c.ggr_est < 0 ? " (prejuízo)" : ""}</span>
+                                <button style={{ ...S.btnSecondary, padding: "4px 9px", fontSize: 10.5, display: "inline-flex", alignItems: "center", gap: 5 }} onClick={(e) => { e.stopPropagation(); downloadComboIds(c); }}>
+                                  <IconDownload /> Baixar IDs
+                                </button>
+                              </div>
+                            )}
+                          </div>
+                        );
+                      })}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ padding: "10px 20px", fontSize: 10.5, color: "var(--t3)" }}>
+                {shownCombos.length} combinaç{shownCombos.length !== 1 ? "ões" : "ão"} · cada barra é um grupo que pegou exatamente aquelas welcomes · a soma de cada grupo bate com o "Comparativo de Repetição"
+              </div>
+            </div>
+          )}
+
+          {/* Gráfico interativo de sobreposições */}
+          {sortedPairs.length > 0 && (
+            <div style={sec}>
+              <div style={secHead}>
+                <span>Sobreposições entre Welcomes</span>
+                <div style={{ display: "flex", border: "1px solid var(--line)", borderRadius: 8, overflow: "hidden" }}>
+                  {[["shared_stake", "Stake"], ["shared", "Jogadores"], ["affinity", "Afinidade"]].map(([k, lbl], idx) => (
+                    <button key={k} onClick={() => setPairMetric(k)}
+                      style={{ padding: "6px 13px", fontSize: 11, fontWeight: 700, border: "none", borderLeft: idx > 0 ? "1px solid var(--line)" : "none", cursor: "pointer", textTransform: "none", letterSpacing: 0, background: pairMetric === k ? "var(--acc)" : "var(--surface)", color: pairMetric === k ? "#fff" : "var(--t2)" }}>
+                      {lbl}
+                    </button>
+                  ))}
+                </div>
+              </div>
+              <div style={{ padding: "6px 0" }}>
+                {sortedPairs.map((p, i) => {
+                  const val = metricGet(pairMetric)(p);
+                  const w = Math.max(2, Math.round((val / maxPairVal) * 100));
+                  const active = hoverPair === i;
+                  const barColor = pairMetric === "shared" ? "var(--warn)" : pairMetric === "affinity" ? "var(--down)" : "var(--info)";
+                  return (
+                    <div key={i}
+                      onMouseEnter={() => setHoverPair(i)}
+                      onMouseLeave={() => setHoverPair(null)}
+                      onClick={() => setHoverPair(active ? null : i)}
+                      style={{ padding: "11px 20px", cursor: "pointer", background: active ? "var(--surface-2)" : "transparent", transition: "background .15s", borderBottom: i < sortedPairs.length - 1 ? "1px solid var(--line)" : "none" }}>
+                      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline", gap: 14, marginBottom: 7 }}>
+                        <div style={{ fontSize: 12.5, color: "var(--t1)", fontWeight: 600, lineHeight: 1.4, wordBreak: "break-word" }}>
+                          {p.a}<span style={{ color: "var(--t3)", margin: "0 8px", fontWeight: 400 }}>↔</span>{p.b}
+                        </div>
+                        <div style={{ fontFamily: "var(--mono)", fontWeight: 700, color: barColor, fontSize: 13, whiteSpace: "nowrap", flexShrink: 0 }}>{metricFmt(pairMetric, val)}</div>
+                      </div>
+                      <div style={{ background: "var(--surface-2)", borderRadius: 6, height: 20, overflow: "hidden" }}>
+                        <div style={{ width: `${w}%`, height: "100%", background: barColor, opacity: active ? 1 : 0.82, borderRadius: 6, transition: "width .35s ease, opacity .15s" }} />
+                      </div>
+                      {active && (
+                        <div style={{ marginTop: 9, display: "flex", gap: "6px 18px", fontSize: 11.5, color: "var(--t3)", flexWrap: "wrap" }}>
+                          <span><strong style={{ color: "var(--t2)" }}>{p.shared.toLocaleString("pt-BR")}</strong> jogadores em comum</span>
+                          <span><strong style={{ color: "var(--t2)" }}>{p.pct_a}%</strong> da audiência de "{p.a}"</span>
+                          <span><strong style={{ color: "var(--t2)" }}>{p.pct_b}%</strong> da audiência de "{p.b}"</span>
+                          <span>Stake compartilhado: <strong style={{ color: "var(--t2)" }}>{fmtR(p.shared_stake)}</strong></span>
+                        </div>
+                      )}
+                    </div>
+                  );
+                })}
+              </div>
+              <div style={{ padding: "10px 20px", borderTop: "1px solid var(--line)", fontSize: 10.5, color: "var(--t3)" }}>
+                {sortedPairs.length} par{sortedPairs.length !== 1 ? "es" : ""} de welcomes com sobreposição · passe o mouse para detalhes · troque a métrica no topo
+              </div>
+            </div>
+          )}
+
+        </>)}
       </div>
     </div>
   );
@@ -1249,7 +1511,7 @@ function DashboardPage({ onBack }) {
       try {
         const data = await api(
           "GET",
-          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento,mercado)&order=created_at.desc"
+          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento,mercado,created_at)&order=created_at.desc"
         );
         if (!cancelled) setReports(data || []);
       } catch (e) {
@@ -1270,8 +1532,8 @@ function DashboardPage({ onBack }) {
   const uniqueReports = Object.values(latestByBoost);
 
   const filtered = uniqueReports.filter((r) => {
-    const ev = r.welcome_boosts?.data_evento ? new Date(r.welcome_boosts.data_evento) : null;
-    if (periodFrom && (!ev || ev < new Date(periodFrom))) return false;
+    const ev = r.welcome_boosts?.created_at ? new Date(r.welcome_boosts.created_at) : null;
+    if (periodFrom && (!ev || ev < new Date(periodFrom + "T00:00:00"))) return false;
     if (periodTo && (!ev || ev > new Date(periodTo + "T23:59:59"))) return false;
     return true;
   });
@@ -1306,10 +1568,10 @@ function DashboardPage({ onBack }) {
 
       <div style={S.reportContent} className="report-content">
         <div style={S.reportTitle} className="report-title">Relatórios Gerais</div>
-        <div style={S.reportSub}>Visão consolidada de todos os relatórios salvos — filtre pelo período do evento</div>
+        <div style={S.reportSub}>Visão consolidada de todos os relatórios salvos — filtre pela data e hora da welcome</div>
 
-        <div style={S.filterBar}>
-          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período do evento:</div>
+        <div style={S.filterBar} className="filter-bar">
+          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período (data da welcome):</div>
           <input type="date" style={S.input} value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
           <span style={{ color: "var(--t3)", fontSize: 13 }}>até</span>
           <input type="date" style={S.input} value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
@@ -1337,7 +1599,7 @@ function DashboardPage({ onBack }) {
                 { label: "Relatórios", value: filtered.length, sub: "no período selecionado", color: "var(--t1)" },
                 { label: "Total Stakes", value: fmt(totals.totalStake), sub: `${totals.qtdApostas} apostas`, color: "var(--t1)" },
                 { label: "GGR", value: fmt(totals.ggr), sub: "Stake − Winnings", color: totals.ggr >= 0 ? "var(--up)" : "var(--down)" },
-                { label: "Usuários", value: totals.idsUnicos, sub: "soma de usuários únicos", color: "var(--info)" },
+                { label: "Participações", value: totals.idsUnicos, sub: "soma por welcome (repete entre welcomes) · ver distintos em Ids Repetidos", color: "var(--info)" },
                 { label: "Ticket Médio", value: fmt(ticketMedio), sub: "médio geral", color: "var(--warn)" },
                 { label: "Wins", value: totals.wins, sub: "apostas ganhas", color: "var(--up)" },
                 { label: "Lost", value: totals.lost, sub: "apostas perdidas", color: "var(--down)" },
@@ -1365,8 +1627,8 @@ function DashboardPage({ onBack }) {
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12 }}>
                         <span style={{ color: "var(--t1)", fontWeight: 600 }}>
                           {r.welcome_boosts?.confronto || "-"}
-                          {r.welcome_boosts?.data_evento && (
-                            <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 8 }}>{fmtDate(r.welcome_boosts.data_evento)}</span>
+                          {r.welcome_boosts?.created_at && (
+                            <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 8 }}>{fmtDate(r.welcome_boosts.created_at)}</span>
                           )}
                         </span>
                         <span style={{ color: ggr >= 0 ? "var(--up)" : "var(--down)", fontWeight: 700 }}>{fmt(ggr)}</span>
@@ -1510,7 +1772,7 @@ function BoostCard({ boost, report, onReport, onDelete }) {
         <div style={S.metaRowItem}>
           <span style={S.metaRowIconWrap}><IconClock /></span>
           <span style={S.metaRowText}>
-            <span style={S.metaRowLabel}>Criado</span>
+            <span style={S.metaRowLabel}>Data e hora da welcome</span>
             <span style={S.metaRowValue}>{fmtDate(boost.created_at)}</span>
           </span>
         </div>
@@ -1578,7 +1840,7 @@ export default function App() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api("GET", "welcome_boosts?order=data_evento.desc");
+      const data = await api("GET", "welcome_boosts?order=created_at.desc");
       setBoosts(data || []);
     } catch (e) {
       console.error(e);
@@ -1636,9 +1898,9 @@ export default function App() {
   const filtered = boosts.filter((b) => {
     const status = computeStatus(b);
     if (tab !== "todos" && status !== tab) return false;
-    const evDate = new Date(b.data_evento);
-    if (filterFrom && evDate < new Date(filterFrom)) return false;
-    if (filterTo && evDate > new Date(filterTo + "T23:59:59")) return false;
+    const wDate = new Date(b.created_at);
+    if (filterFrom && wDate < new Date(filterFrom + "T00:00:00")) return false;
+    if (filterTo && wDate > new Date(filterTo + "T23:59:59")) return false;
     return true;
   });
 
@@ -1706,7 +1968,7 @@ export default function App() {
             </div>
 
             <div style={S.filterBar} className="filter-bar">
-            <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Filtrar por evento:</div>
+            <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Filtrar por data da welcome:</div>
             <input
               type="date" style={S.input}
               value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
