@@ -474,14 +474,14 @@ const S = {
 function FormModal({ onClose, onSave, loading }) {
   const [form, setForm] = useState({
     confronto: "", id_jogo: "", feito_por: "Neto", pedido_por: "",
-    data_evento: "", odd_antiga: "", odd_nova: "", max_stake: "", mercado: "",
+    data_evento: "", data_welcome: "", odd_antiga: "", odd_nova: "", max_stake: "", mercado: "",
     feito_em: "",
   });
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const submit = async () => {
-    if (!form.confronto || !form.id_jogo || !form.data_evento || !form.odd_antiga || !form.odd_nova || !form.max_stake || !form.pedido_por) {
+    if (!form.confronto || !form.id_jogo || !form.data_evento || !form.data_welcome || !form.odd_antiga || !form.odd_nova || !form.max_stake || !form.pedido_por) {
       alert("Preencha todos os campos.");
       return;
     }
@@ -491,6 +491,7 @@ function FormModal({ onClose, onSave, loading }) {
       odd_nova: parseFloat(form.odd_nova),
       max_stake: parseFloat(form.max_stake),
       data_evento: new Date(form.data_evento).toISOString(),
+      data_welcome: new Date(form.data_welcome).toISOString(),
       feito_em: form.feito_em ? new Date(form.feito_em).toISOString() : null,
     });
   };
@@ -534,6 +535,11 @@ function FormModal({ onClose, onSave, loading }) {
             <div style={S.formGroupFull} className="form-group-full">
               <span style={S.label}>Data e Hora do Evento</span>
               <input type="datetime-local" style={inputStyle} value={form.data_evento} onChange={set("data_evento")} />
+            </div>
+            <div style={S.formGroupFull} className="form-group-full">
+              <span style={S.label}>Data e Hora da Welcome</span>
+              <input type="datetime-local" style={inputStyle} value={form.data_welcome} onChange={set("data_welcome")} />
+              <span style={{ fontSize: 11, color: "var(--t3)", marginTop: 4 }}>A partir de quando novos cadastros conseguem pegar a promoção (data do outro sistema).</span>
             </div>
             <div style={S.formGroupFull} className="form-group-full">
               <span style={S.label}>Feito em (data e horário)</span>
@@ -907,7 +913,7 @@ function ReportPage({ boost, onBack, onSaveReport }) {
 // ─── IDS REPETIDOS — DASHBOARD ───────────────────────────────────────────────
 // Cruza os jogadores entre os Welcome Boosts cadastrados e mostra, por faixa de
 // repetição, quantos IDs pegaram N welcomes e o prejuízo (GGR) que geraram.
-// Filtrável pela data/hora da welcome (campo created_at do card).
+// Filtrável pela data do evento (welcome_boosts.data_evento).
 const fmtR = (v) => {
   if (v === undefined || v === null || isNaN(v)) return "R$ 0,00";
   return new Intl.NumberFormat("pt-BR", { style: "currency", currency: "BRL" }).format(v);
@@ -947,7 +953,7 @@ function computeIdsAnalysis(reports) {
     if (!boosts.has(key)) boosts.set(key, {
       label, confronto, mercado, ids: new Set(), shared: new Set(),
       stake: 0, ggr: 0,
-      welcomeDate: r.welcome_boosts?.created_at ?? null,
+      welcomeDate: r.welcome_boosts?.data_evento ?? null,
       data_evento: r.welcome_boosts?.data_evento ?? null,
     });
     const b = boosts.get(key);
@@ -1088,7 +1094,7 @@ function RepeatedIdsPage({ onBack }) {
     setPhase("loading");
     try {
       const reports = await api("GET",
-        "boost_relatorios?select=id,boost_id,player_ids,total_stake,ggr,created_at,welcome_boosts(confronto,data_evento,mercado,created_at)&player_ids=not.is.null&order=created_at.desc");
+        "boost_relatorios?select=id,boost_id,player_ids,total_stake,ggr,created_at,welcome_boosts(confronto,data_evento,mercado)&player_ids=not.is.null&order=created_at.desc");
       if (!reports?.length) { setRawReports([]); setPhase("no_data"); return; }
       // Mantém apenas o relatório MAIS RECENTE de cada boost (vem ordenado por created_at desc).
       // Evita somar stake/ggr em duplicidade quando uma boost teve o relatório salvo mais de uma vez
@@ -1102,13 +1108,13 @@ function RepeatedIdsPage({ onBack }) {
 
   useEffect(() => { fetchRaw(); }, [fetchRaw]);
 
-  // filtro por data/hora da welcome
+  // filtro por data do evento
   const filtered = useMemo(() => {
     if (!rawReports) return null;
     const from = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
     const to = dateTo ? new Date(dateTo + "T23:59:59") : null;
     return rawReports.filter(r => {
-      const ds = r.welcome_boosts?.created_at;
+      const ds = r.welcome_boosts?.data_evento;
       if (!ds) return true;
       const d = new Date(ds);
       if (from && d < from) return false;
@@ -1128,7 +1134,7 @@ function RepeatedIdsPage({ onBack }) {
       if (!seen.has(key)) {
         const c = r.welcome_boosts?.confronto || "Sem nome";
         const m = r.welcome_boosts?.mercado || "";
-        seen.set(key, { label: m ? `${c} · ${m}` : c, date: r.welcome_boosts?.created_at });
+        seen.set(key, { label: m ? `${c} · ${m}` : c, date: r.welcome_boosts?.data_evento });
       }
     }
     return [...seen.values()].sort((x, y) => (y.date || "").localeCompare(x.date || ""));
@@ -1216,7 +1222,7 @@ function RepeatedIdsPage({ onBack }) {
 
         {/* Filtro por data/hora da welcome */}
         <div style={S.filterBar} className="filter-bar">
-          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período (data da welcome):</div>
+          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período (data do evento):</div>
           <input type="date" style={S.input} value={dateFrom} onChange={(e) => setDateFrom(e.target.value)} />
           <span style={{ color: "var(--t3)", fontSize: 13 }}>até</span>
           <input type="date" style={S.input} value={dateTo} onChange={(e) => setDateTo(e.target.value)} />
@@ -1511,7 +1517,7 @@ function DashboardPage({ onBack }) {
       try {
         const data = await api(
           "GET",
-          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento,mercado,created_at)&order=created_at.desc"
+          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento,mercado)&order=created_at.desc"
         );
         if (!cancelled) setReports(data || []);
       } catch (e) {
@@ -1532,7 +1538,7 @@ function DashboardPage({ onBack }) {
   const uniqueReports = Object.values(latestByBoost);
 
   const filtered = uniqueReports.filter((r) => {
-    const ev = r.welcome_boosts?.created_at ? new Date(r.welcome_boosts.created_at) : null;
+    const ev = r.welcome_boosts?.data_evento ? new Date(r.welcome_boosts.data_evento) : null;
     if (periodFrom && (!ev || ev < new Date(periodFrom + "T00:00:00"))) return false;
     if (periodTo && (!ev || ev > new Date(periodTo + "T23:59:59"))) return false;
     return true;
@@ -1568,10 +1574,10 @@ function DashboardPage({ onBack }) {
 
       <div style={S.reportContent} className="report-content">
         <div style={S.reportTitle} className="report-title">Relatórios Gerais</div>
-        <div style={S.reportSub}>Visão consolidada de todos os relatórios salvos — filtre pela data e hora da welcome</div>
+        <div style={S.reportSub}>Visão consolidada de todos os relatórios salvos — filtre pelo período do evento</div>
 
         <div style={S.filterBar} className="filter-bar">
-          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período (data da welcome):</div>
+          <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Período do evento:</div>
           <input type="date" style={S.input} value={periodFrom} onChange={(e) => setPeriodFrom(e.target.value)} />
           <span style={{ color: "var(--t3)", fontSize: 13 }}>até</span>
           <input type="date" style={S.input} value={periodTo} onChange={(e) => setPeriodTo(e.target.value)} />
@@ -1627,8 +1633,8 @@ function DashboardPage({ onBack }) {
                       <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 5, fontSize: 12 }}>
                         <span style={{ color: "var(--t1)", fontWeight: 600 }}>
                           {r.welcome_boosts?.confronto || "-"}
-                          {r.welcome_boosts?.created_at && (
-                            <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 8 }}>{fmtDate(r.welcome_boosts.created_at)}</span>
+                          {r.welcome_boosts?.data_evento && (
+                            <span style={{ color: "var(--t3)", fontWeight: 400, marginLeft: 8 }}>{fmtDate(r.welcome_boosts.data_evento)}</span>
                           )}
                         </span>
                         <span style={{ color: ggr >= 0 ? "var(--up)" : "var(--down)", fontWeight: 700 }}>{fmt(ggr)}</span>
@@ -1773,7 +1779,14 @@ function BoostCard({ boost, report, onReport, onDelete }) {
           <span style={S.metaRowIconWrap}><IconClock /></span>
           <span style={S.metaRowText}>
             <span style={S.metaRowLabel}>Data e hora da welcome</span>
-            <span style={S.metaRowValue}>{fmtDate(boost.created_at)}</span>
+            <span style={S.metaRowValue}>{boost.data_welcome ? fmtDate(boost.data_welcome) : "—"}</span>
+          </span>
+        </div>
+        <div style={S.metaRowItem}>
+          <span style={S.metaRowIconWrap}><IconClock /></span>
+          <span style={S.metaRowText}>
+            <span style={S.metaRowLabel}>Cadastrado em</span>
+            <span style={{ ...S.metaRowValue, color: "var(--t3)" }}>{fmtDate(boost.created_at)}</span>
           </span>
         </div>
         {boost.feito_em && (
@@ -1840,7 +1853,7 @@ export default function App() {
   const load = useCallback(async () => {
     setLoading(true);
     try {
-      const data = await api("GET", "welcome_boosts?order=created_at.desc");
+      const data = await api("GET", "welcome_boosts?order=data_evento.desc");
       setBoosts(data || []);
     } catch (e) {
       console.error(e);
@@ -1898,9 +1911,9 @@ export default function App() {
   const filtered = boosts.filter((b) => {
     const status = computeStatus(b);
     if (tab !== "todos" && status !== tab) return false;
-    const wDate = new Date(b.created_at);
-    if (filterFrom && wDate < new Date(filterFrom + "T00:00:00")) return false;
-    if (filterTo && wDate > new Date(filterTo + "T23:59:59")) return false;
+    const evDate = new Date(b.data_evento);
+    if (filterFrom && evDate < new Date(filterFrom + "T00:00:00")) return false;
+    if (filterTo && evDate > new Date(filterTo + "T23:59:59")) return false;
     return true;
   });
 
@@ -1968,7 +1981,7 @@ export default function App() {
             </div>
 
             <div style={S.filterBar} className="filter-bar">
-            <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Filtrar por data da welcome:</div>
+            <div style={{ fontSize: 12, color: "var(--t3)", marginRight: 4 }}>Filtrar por evento:</div>
             <input
               type="date" style={S.input}
               value={filterFrom} onChange={(e) => setFilterFrom(e.target.value)}
