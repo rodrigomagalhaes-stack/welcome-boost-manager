@@ -24,6 +24,39 @@ const api = async (method, path, body, extraHeaders = {}) => {
   return res.json();
 };
 
+// Mantém apenas o relatório mais recente de cada boost (assume `reports` ordenado por created_at desc).
+// Usado em todas as telas para evitar somar/duplicar quando uma boost teve relatório salvo mais de uma vez.
+const dedupLatestByBoost = (reports) => {
+  const latest = {};
+  for (const r of reports || []) {
+    const k = r.boost_id ?? r.id;
+    if (!latest[k]) latest[k] = r;
+  }
+  return Object.values(latest);
+};
+
+// Busca todos os relatórios (com dados da boost) já deduplicados pelo mais recente de cada boost.
+// Compartilhado por "Relatórios Gerais" e "Ids Repetidos" para garantir que ambos somem
+// exatamente o mesmo conjunto de dados.
+const fetchLatestReports = () =>
+  api("GET", "boost_relatorios?select=*,welcome_boosts(confronto,data_evento,mercado)&order=created_at.desc")
+    .then(dedupLatestByBoost);
+
+// Filtra relatórios pela data do evento (welcome_boosts.data_evento). Compartilhado entre
+// "Relatórios Gerais" e "Ids Repetidos" para que os dois usem o mesmo critério de período.
+const filterReportsByEventDate = (reports, from, to) => {
+  const fromD = from ? new Date(from + "T00:00:00") : null;
+  const toD = to ? new Date(to + "T23:59:59") : null;
+  return (reports || []).filter((r) => {
+    const ds = r.welcome_boosts?.data_evento;
+    if (!ds) return !from && !to;
+    const d = new Date(ds);
+    if (fromD && d < fromD) return false;
+    if (toD && d > toD) return false;
+    return true;
+  });
+};
+
 const computeStatus = (boost) => {
   const now = new Date();
   const evento = new Date(boost.data_evento);
@@ -60,6 +93,16 @@ const fmtDate = (d) =>
     day: "2-digit", month: "2-digit", year: "numeric",
     hour: "2-digit", minute: "2-digit",
   });
+
+// Converte uma data ISO (UTC) para o valor que um <input type="datetime-local"> espera
+// (YYYY-MM-DDTHH:mm em horário LOCAL). Usado para pré-preencher o formulário ao editar.
+const toLocalInput = (iso) => {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (isNaN(d)) return "";
+  const pad = (n) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+};
 
 // Gera e baixa um .csv com a lista de IDs de jogadores processados em um relatório
 const downloadIds = (ids, boost) => {
@@ -102,6 +145,12 @@ const IconTrash = () => (
   <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round">
     <polyline points="3 6 5 6 21 6" /><path d="M19 6l-1 14H6L5 6" /><path d="M10 11v6M14 11v6" />
     <path d="M9 6V4h6v2" />
+  </svg>
+);
+const IconEdit = () => (
+  <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+    <path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7" />
+    <path d="M18.5 2.5a2.12 2.12 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z" />
   </svg>
 );
 const IconClose = () => (
@@ -471,8 +520,21 @@ const S = {
 };
 
 // ─── FORM MODAL ──────────────────────────────────────────────────────────────
-function FormModal({ onClose, onSave, loading }) {
-  const [form, setForm] = useState({
+function FormModal({ onClose, onSave, loading, initial }) {
+  const isEdit = !!initial;
+  const [form, setForm] = useState(() => initial ? {
+    confronto: initial.confronto || "",
+    id_jogo: initial.id_jogo || "",
+    feito_por: initial.feito_por || "Neto",
+    pedido_por: initial.pedido_por || "",
+    data_evento: toLocalInput(initial.data_evento),
+    data_welcome: toLocalInput(initial.data_welcome),
+    odd_antiga: initial.odd_antiga != null ? String(initial.odd_antiga) : "",
+    odd_nova: initial.odd_nova != null ? String(initial.odd_nova) : "",
+    max_stake: initial.max_stake != null ? String(initial.max_stake) : "",
+    mercado: initial.mercado || "",
+    feito_em: toLocalInput(initial.feito_em),
+  } : {
     confronto: "", id_jogo: "", feito_por: "Neto", pedido_por: "",
     data_evento: "", data_welcome: "", odd_antiga: "", odd_nova: "", max_stake: "", mercado: "",
     feito_em: "",
@@ -1093,15 +1155,11 @@ function RepeatedIdsPage({ onBack }) {
   const fetchRaw = useCallback(async () => {
     setPhase("loading");
     try {
-      const reports = await api("GET",
-        "boost_relatorios?select=id,boost_id,player_ids,total_stake,ggr,created_at,welcome_boosts(confronto,data_evento,mercado)&player_ids=not.is.null&order=created_at.desc");
-      if (!reports?.length) { setRawReports([]); setPhase("no_data"); return; }
-      // Mantém apenas o relatório MAIS RECENTE de cada boost (vem ordenado por created_at desc).
-      // Evita somar stake/ggr em duplicidade quando uma boost teve o relatório salvo mais de uma vez
-      // e garante consistência com "Relatórios Gerais" (que também usa o último por boost).
-      const latest = {};
-      for (const r of reports) { const k = r.boost_id ?? r.id; if (!latest[k]) latest[k] = r; }
-      setRawReports(Object.values(latest));
+      // Mesma busca (já deduplicada pelo relatório mais recente de cada boost) usada em
+      // "Relatórios Gerais", para que os dois dashboards somem exatamente os mesmos dados.
+      const reports = await fetchLatestReports();
+      if (!reports.length) { setRawReports([]); setPhase("no_data"); return; }
+      setRawReports(reports);
       setPhase("ready");
     } catch (e) { console.error(e); setPhase("error"); }
   }, []);
@@ -1111,16 +1169,7 @@ function RepeatedIdsPage({ onBack }) {
   // filtro por data do evento
   const filtered = useMemo(() => {
     if (!rawReports) return null;
-    const from = dateFrom ? new Date(dateFrom + "T00:00:00") : null;
-    const to = dateTo ? new Date(dateTo + "T23:59:59") : null;
-    return rawReports.filter(r => {
-      const ds = r.welcome_boosts?.data_evento;
-      if (!ds) return true;
-      const d = new Date(ds);
-      if (from && d < from) return false;
-      if (to && d > to) return false;
-      return true;
-    });
+    return filterReportsByEventDate(rawReports, dateFrom, dateTo);
   }, [rawReports, dateFrom, dateTo]);
 
   const a = useMemo(() => filtered ? computeIdsAnalysis(filtered) : null, [filtered]);
@@ -1515,11 +1564,10 @@ function DashboardPage({ onBack }) {
     let cancelled = false;
     (async () => {
       try {
-        const data = await api(
-          "GET",
-          "boost_relatorios?select=*,welcome_boosts(confronto,data_evento,mercado)&order=created_at.desc"
-        );
-        if (!cancelled) setReports(data || []);
+        // Mesma busca (já deduplicada pelo relatório mais recente de cada boost) usada em
+        // "Ids Repetidos", para que os dois dashboards somem exatamente os mesmos dados.
+        const data = await fetchLatestReports();
+        if (!cancelled) setReports(data);
       } catch (e) {
         console.error(e);
         if (!cancelled) setReports([]);
@@ -1528,37 +1576,25 @@ function DashboardPage({ onBack }) {
     return () => { cancelled = true; };
   }, []);
 
-  // Considera apenas o relatório mais recente de cada boost (reports vem ordenado
-  // por created_at desc), para ficar consistente com o que é exibido nos cards —
-  // evita somar em duplicidade quando uma mesma boost teve o relatório salvo mais de uma vez.
-  const latestByBoost = {};
-  for (const r of reports || []) {
-    if (!latestByBoost[r.boost_id]) latestByBoost[r.boost_id] = r;
-  }
-  const uniqueReports = Object.values(latestByBoost);
-
-  const filtered = uniqueReports.filter((r) => {
-    const ev = r.welcome_boosts?.data_evento ? new Date(r.welcome_boosts.data_evento) : null;
-    if (periodFrom && (!ev || ev < new Date(periodFrom + "T00:00:00"))) return false;
-    if (periodTo && (!ev || ev > new Date(periodTo + "T23:59:59"))) return false;
-    return true;
-  });
+  const filtered = useMemo(() => filterReportsByEventDate(reports || [], periodFrom, periodTo), [reports, periodFrom, periodTo]);
 
   const totals = filtered.reduce(
     (acc, r) => {
       acc.totalStake += Number(r.total_stake) || 0;
       acc.ggr += Number(r.ggr) || 0;
-      acc.idsUnicos += Number(r.ids_unicos) || 0;
       acc.qtdApostas += Number(r.qtd_apostas) || 0;
       acc.wins += Number(r.wins) || 0;
       acc.lost += Number(r.lost) || 0;
       acc.cashout += Number(r.cashout) || 0;
       return acc;
     },
-    { totalStake: 0, ggr: 0, idsUnicos: 0, qtdApostas: 0, wins: 0, lost: 0, cashout: 0 }
+    { totalStake: 0, ggr: 0, qtdApostas: 0, wins: 0, lost: 0, cashout: 0 }
   );
   const ticketMedio = totals.qtdApostas > 0 ? totals.totalStake / totals.qtdApostas : 0;
   const maxAbsGgr = Math.max(1, ...filtered.map((r) => Math.abs(Number(r.ggr) || 0)));
+  // Mesma análise cruzada de IDs usada em "Ids Repetidos" — garante que "Participações" e
+  // "Jogadores Distintos" aqui batam exatamente com aquela tela.
+  const a = useMemo(() => computeIdsAnalysis(filtered), [filtered]);
 
   return (
     <div style={S.reportPage}>
@@ -1605,7 +1641,8 @@ function DashboardPage({ onBack }) {
                 { label: "Relatórios", value: filtered.length, sub: "no período selecionado", color: "var(--t1)" },
                 { label: "Total Stakes", value: fmt(totals.totalStake), sub: `${totals.qtdApostas} apostas`, color: "var(--t1)" },
                 { label: "GGR", value: fmt(totals.ggr), sub: "Stake − Winnings", color: totals.ggr >= 0 ? "var(--up)" : "var(--down)" },
-                { label: "Participações", value: totals.idsUnicos, sub: "soma por welcome (repete entre welcomes) · ver distintos em Ids Repetidos", color: "var(--info)" },
+                { label: "Participações", value: a.totalParticipacoes.toLocaleString("pt-BR"), sub: "soma por welcome (repete entre welcomes) · ver distintos em Ids Repetidos", color: "var(--info)" },
+                { label: "Jogadores Distintos", value: a.totalUnique.toLocaleString("pt-BR"), sub: `${a.totalRepeated.toLocaleString("pt-BR")} pegaram 2+ welcomes · ver Ids Repetidos`, color: "var(--info)" },
                 { label: "Ticket Médio", value: fmt(ticketMedio), sub: "médio geral", color: "var(--warn)" },
                 { label: "Wins", value: totals.wins, sub: "apostas ganhas", color: "var(--up)" },
                 { label: "Lost", value: totals.lost, sub: "apostas perdidas", color: "var(--down)" },
@@ -1863,8 +1900,10 @@ export default function App() {
 
   const loadReports = useCallback(async () => {
     try {
-      const data = await api("GET", "boost_relatorios?order=created_at.desc");
-      setReports(data || []);
+      // Já deduplicado pelo relatório mais recente de cada boost — mesma fonte usada
+      // em "Relatórios Gerais" e "Ids Repetidos".
+      const data = await fetchLatestReports();
+      setReports(data);
     } catch (e) {
       console.error(e);
     }
