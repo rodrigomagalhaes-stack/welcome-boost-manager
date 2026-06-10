@@ -1,12 +1,12 @@
 import { S } from "../styles";
 import {
-  IconChart, IconTrash, IconCalendar, IconClock, IconUser, IconTag,
+  IconChart, IconTrash, IconEdit, IconCalendar, IconClock, IconUser, IconTag,
   IconChevronRight, IconTrophy, IconCashout, IconTicket, IconCoin, IconDownload,
 } from "../icons";
 import { fmt, fmtDate, computeStatus, statusConfig, splitConfronto, initials, colorFor, downloadIds } from "../lib/format";
 
 // ─── CARD ─────────────────────────────────────────────────────────────────────
-export default function BoostCard({ boost, report, onReport, onDelete }) {
+export default function BoostCard({ boost, report, onReport, onEdit, onDelete }) {
   const status = computeStatus(boost);
   const cfg = statusConfig[status] || statusConfig.ativo;
   const boost_pct = boost.odd_antiga > 0
@@ -174,6 +174,13 @@ export default function BoostCard({ boost, report, onReport, onDelete }) {
             <IconDownload /> Baixar Ids
           </button>
         )}
+        <button
+          style={{ ...S.btnSecondary, padding: "9px 12px" }}
+          onClick={() => onEdit(boost)}
+          title="Editar dados desta boost"
+        >
+          <IconEdit />
+        </button>
         <button style={S.btnDelete} onClick={() => onDelete(boost.id)} title="Excluir">
           <IconTrash />
         </button>

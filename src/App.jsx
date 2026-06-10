@@ -16,10 +16,11 @@ export default function App() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [showForm, setShowForm] = useState(false);
+  const [editBoost, setEditBoost] = useState(null); // boost sendo editado (null = criando)
   const [reportBoost, setReportBoost] = useState(null);
   const [showRepeatedIds, setShowRepeatedIds] = useState(false);
   const [showDashboard, setShowDashboard] = useState(false);
-  const [tab, setTab] = useState("todos");
+  const [tab, setTab] = useState("ativo"); // abre direto em "Ativos"
   const [filterFrom, setFilterFrom] = useState("");
   const [filterTo, setFilterTo] = useState("");
   // Período compartilhado entre "Relatórios Gerais" e "Ids Repetidos" — a data escolhida
@@ -62,13 +63,20 @@ export default function App() {
   const save = async (form) => {
     setSaving(true);
     try {
-      await api("POST", "welcome_boosts", form);
+      if (editBoost) await api("PATCH", `welcome_boosts?id=eq.${editBoost.id}`, form);
+      else await api("POST", "welcome_boosts", form);
       setShowForm(false);
+      setEditBoost(null);
       await load();
     } catch (e) {
       alert("Erro ao salvar: " + e.message);
     }
     setSaving(false);
+  };
+
+  const openEdit = (boost) => {
+    setEditBoost(boost);
+    setShowForm(true);
   };
 
   const saveReport = async (report) => {
@@ -129,7 +137,7 @@ export default function App() {
               </div>
             </div>
 
-            <button style={S.btnPrimary} className="btn-primary" onClick={() => setShowForm(true)}>
+            <button style={S.btnPrimary} className="btn-primary" onClick={() => { setEditBoost(null); setShowForm(true); }}>
               <IconPlus /> Nova Boost
             </button>
 
@@ -192,7 +200,7 @@ export default function App() {
           ) : (
             <div style={S.grid} className="app-grid">
               {filtered.map((b) => (
-                <BoostCard key={b.id} boost={b} report={latestReportByBoost[b.id]} onReport={setReportBoost} onDelete={remove} />
+                <BoostCard key={b.id} boost={b} report={latestReportByBoost[b.id]} onReport={setReportBoost} onEdit={openEdit} onDelete={remove} />
               ))}
             </div>
           )}
@@ -200,7 +208,12 @@ export default function App() {
         </div>
 
         {showForm && (
-          <FormModal onClose={() => setShowForm(false)} onSave={save} loading={saving} />
+          <FormModal
+            onClose={() => { setShowForm(false); setEditBoost(null); }}
+            onSave={save}
+            loading={saving}
+            initial={editBoost}
+          />
         )}
       </div>
     </>
